@@ -120,13 +120,86 @@ class OpenAILLM(BaseLLM):
             raise
 
 
+def get_default_model_from_db():
+    """
+    从数据库获取默认 LLM 模型配置
+
+    Returns:
+        dict: 包含模型和供应商信息的字典，如果没有默认模型则返回 None
+    """
+    try:
+        from admin.database import SessionLocal
+        from admin.models import LLMModel, LLMProvider
+
+        db = SessionLocal()
+        try:
+            # 查找默认模型
+            model = db.query(LLMModel).filter(
+                LLMModel.is_default == True,
+                LLMModel.is_active == True
+            ).first()
+
+            if not model:
+                return None
+
+            # 获取关联的供应商
+            provider = db.query(LLMProvider).filter(
+                LLMProvider.id == model.provider_id,
+                LLMProvider.is_active == True
+            ).first()
+
+            if not provider:
+                return None
+
+            return {
+                "model_id": model.model_id,
+                "temperature": float(model.temperature),
+                "max_tokens": model.max_tokens,
+                "system_prompt": model.system_prompt,
+                "api_format": provider.api_format,
+                "api_key": provider.api_key,
+                "base_url": provider.base_url
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"从数据库获取默认模型失败: {e}")
+        return None
+
+
 def get_llm_client() -> BaseLLM:
     """
     根据配置获取 LLM 客户端
+    优先使用数据库中的默认模型配置，如果没有则使用 .env 配置
 
     Returns:
         BaseLLM 实例
     """
+    # 尝试从数据库获取默认模型
+    db_config = get_default_model_from_db()
+
+    if db_config:
+        logger.info(f"使用数据库配置的默认模型: {db_config['model_id']}")
+
+        if db_config["api_format"] == "openai":
+            return OpenAILLM(
+                api_key=db_config["api_key"],
+                model=db_config["model_id"],
+                base_url=db_config["base_url"] or None,
+                temperature=db_config["temperature"],
+                max_tokens=db_config["max_tokens"]
+            )
+        else:
+            return AnthropicLLM(
+                api_key=db_config["api_key"],
+                model=db_config["model_id"],
+                base_url=db_config["base_url"] or None,
+                temperature=db_config["temperature"],
+                max_tokens=db_config["max_tokens"]
+            )
+
+    # 回退到 .env 配置
+    logger.info("数据库无默认模型，使用 .env 配置")
     from config import (
         LLM_PROVIDER,
         LLM_MODEL,
