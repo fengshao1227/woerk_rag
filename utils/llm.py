@@ -47,7 +47,12 @@ class AnthropicLLM(BaseLLM):
         if base_url:
             client_kwargs["base_url"] = base_url
 
-        # 增加超时时间（默认 60 秒可能不够）
+        # 添加自定义 headers 和超时设置，绕过 Cloudflare 检测
+        client_kwargs["default_headers"] = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+        }
         client_kwargs["timeout"] = httpx.Timeout(120.0, connect=30.0)
 
         self.client = anthropic.Anthropic(**client_kwargs)
@@ -95,10 +100,19 @@ class OpenAILLM(BaseLLM):
 
         # 使用 openai SDK，支持自定义 base_url
         from openai import OpenAI
+        import httpx
 
         client_kwargs = {"api_key": api_key}
         if base_url:
             client_kwargs["base_url"] = base_url
+
+        # 添加自定义 headers 和超时设置，绕过 Cloudflare 检测
+        client_kwargs["default_headers"] = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+        }
+        client_kwargs["timeout"] = httpx.Timeout(120.0, connect=30.0)
 
         self.client = OpenAI(**client_kwargs)
         logger.info(f"OpenAILLM 初始化: model={model}, base_url={base_url or 'default'}")
