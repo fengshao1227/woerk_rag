@@ -1,9 +1,16 @@
 import axios from 'axios';
 
 const API_BASE = 'https://rag.litxczv.shop/admin/api';
+const RAG_API_BASE = 'https://rag.litxczv.shop';
 
 const api = axios.create({
   baseURL: API_BASE,
+  headers: { 'Content-Type': 'application/json' }
+});
+
+// RAG 问答 API（根路径）
+const ragApi = axios.create({
+  baseURL: RAG_API_BASE,
   headers: { 'Content-Type': 'application/json' }
 });
 
@@ -78,4 +85,11 @@ export const testAPI = {
   testModel: data => api.post('/models/test', data)
 };
 
+export const chatAPI = {
+  query: (question, top_k = 5, use_history = true) =>
+    ragApi.post('/query', { question, top_k, use_history }),
+  clearHistory: () => ragApi.post('/clear-history')
+};
+
+export { ragApi };
 export default api;
