@@ -60,3 +60,10 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+
+# Project specific
+rag.db
+claude_desktop_config.json
+.setting/
+.spec-workflow/
+knowledge/

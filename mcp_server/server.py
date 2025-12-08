@@ -151,5 +151,10 @@ def add_knowledge(content: str, title: Optional[str] = None, category: str = "ge
         return f"## 错误\n\n添加知识失败: {str(e)}"
 
 
-if __name__ == "__main__":
+def main():
+    """MCP Server 入口函数，供 uvx 调用"""
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()
