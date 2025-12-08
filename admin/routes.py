@@ -844,7 +844,17 @@ async def test_model(
         
     except Exception as e:
         request_time = time.time() - start_time
-        
+
+        # 截断错误消息，避免超出数据库字段长度
+        error_msg = str(e)
+        if len(error_msg) > 1000:
+            # 提取关键错误信息
+            if "API 错误:" in error_msg:
+                # 提取状态码和前200字符
+                error_msg = error_msg[:500] + "... [truncated]"
+            else:
+                error_msg = error_msg[:1000] + "... [truncated]"
+
         # 记录错误日志
         usage_log = LLMUsageLog(
             model_id=model.id,
@@ -855,14 +865,14 @@ async def test_model(
             cost=0,
             request_time=request_time,
             status='error',
-            error_message=str(e)
+            error_message=error_msg
         )
         db.add(usage_log)
         db.commit()
-        
+
         return TestModelResponse(
             success=False,
-            error=str(e),
+            error=error_msg,
             usage={},
             request_time=request_time
         )
