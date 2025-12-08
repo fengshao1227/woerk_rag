@@ -88,25 +88,40 @@ echo -e "${YELLOW}[6/6] 更新服务器并重启服务...${NC}"
 # 拉取代码
 ssh $SERVER "cd $REMOTE_DIR && git pull origin main"
 
-# 重启服务（使用 bash -c 和完全分离输出避免 SSH 挂起）
-ssh $SERVER "fuser -k 8000/tcp 2>/dev/null || true"
-sleep 2
+# 彻底停止旧服务
+echo "停止旧服务..."
+ssh $SERVER "pkill -9 -f 'python.*server.py' 2>/dev/null || true; sleep 2"
+ssh $SERVER "fuser -k 8000/tcp 2>/dev/null || true; sleep 1"
+
+# 确认端口已释放
+for i in 1 2 3; do
+    if ssh $SERVER "lsof -i :8000 2>/dev/null" | grep -q LISTEN; then
+        echo "端口仍被占用，等待..."
+        sleep 2
+    else
+        echo "端口已释放"
+        break
+    fi
+done
+
+# 启动新服务
+echo "启动新服务..."
 ssh -f $SERVER "cd $REMOTE_DIR && source venv/bin/activate && nohup python api/server.py > server.log 2>&1 < /dev/null &"
 echo -e "${GREEN}✓ 服务启动命令已发送${NC}"
 
-# 等待服务启动
-echo "等待服务启动..."
-sleep 8
+# 等待服务启动（加载模型约需15秒）
+echo "等待服务启动（加载模型中，约需15秒）..."
+sleep 18
 
 # 检查服务状态（最多重试 3 次）
 for i in 1 2 3; do
-    if curl -s --max-time 5 https://rag.litxczv.shop/health > /dev/null; then
+    if curl -s --max-time 10 https://rag.litxczv.shop/health > /dev/null; then
         echo -e "${GREEN}✓ 服务启动成功${NC}"
         break
     else
         if [ $i -lt 3 ]; then
             echo "重试中... ($i/3)"
-            sleep 3
+            sleep 5
         else
             echo -e "${YELLOW}⚠ 服务可能未正常启动，请手动检查${NC}"
         fi
