@@ -43,6 +43,7 @@ app.include_router(admin_router)
 
 # 静态文件目录
 STATIC_DIR = Path(__file__).parent.parent / "static"
+ADMIN_STATIC_DIR = Path(__file__).parent.parent / "admin_frontend" / "dist"
 
 # 全局实例
 qa_chain = None
@@ -259,6 +260,18 @@ async def health():
 async def root():
     """返回前端页面"""
     return FileResponse(STATIC_DIR / "index.html")
+
+
+# Admin 前端路由（SPA，需要处理所有子路由）
+@app.get("/admin")
+@app.get("/admin/{path:path}")
+async def admin_spa(path: str = ""):
+    """返回 Admin 前端页面"""
+    # 如果请求的是静态资源，让静态文件处理器处理
+    if path.startswith("assets/"):
+        return FileResponse(ADMIN_STATIC_DIR / path)
+    # 否则返回 index.html（SPA 路由）
+    return FileResponse(ADMIN_STATIC_DIR / "index.html")
 
 
 # 挂载静态文件（放在最后，避免覆盖 API 路由）
