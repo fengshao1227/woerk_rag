@@ -88,19 +88,30 @@ echo -e "${YELLOW}[6/6] 更新服务器并重启服务...${NC}"
 # 拉取代码
 ssh $SERVER "cd $REMOTE_DIR && git pull origin main"
 
-# 重启服务（使用单独的命令避免 nohup 问题）
+# 重启服务（使用 bash -c 和完全分离输出避免 SSH 挂起）
 ssh $SERVER "fuser -k 8000/tcp 2>/dev/null || true"
 sleep 2
-ssh $SERVER "cd $REMOTE_DIR && source venv/bin/activate && nohup python api/server.py > server.log 2>&1 &"
-sleep 5
+ssh -f $SERVER "cd $REMOTE_DIR && source venv/bin/activate && nohup python api/server.py > server.log 2>&1 < /dev/null &"
+echo -e "${GREEN}✓ 服务启动命令已发送${NC}"
 
-# 检查服务状态
-if curl -s https://rag.litxczv.shop/health > /dev/null; then
-    echo -e "${GREEN}✓ 服务启动成功${NC}"
-else
-    echo -e "${YELLOW}⚠ 服务可能未正常启动，请手动检查${NC}"
-fi
-echo -e "${GREEN}✓ 服务已重启${NC}"
+# 等待服务启动
+echo "等待服务启动..."
+sleep 8
+
+# 检查服务状态（最多重试 3 次）
+for i in 1 2 3; do
+    if curl -s --max-time 5 https://rag.litxczv.shop/health > /dev/null; then
+        echo -e "${GREEN}✓ 服务启动成功${NC}"
+        break
+    else
+        if [ $i -lt 3 ]; then
+            echo "重试中... ($i/3)"
+            sleep 3
+        else
+            echo -e "${YELLOW}⚠ 服务可能未正常启动，请手动检查${NC}"
+        fi
+    fi
+done
 
 # 7. 清理本地构建产物
 echo -e "${YELLOW}清理本地构建产物...${NC}"
