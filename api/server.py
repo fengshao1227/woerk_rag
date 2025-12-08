@@ -251,6 +251,79 @@ async def add_knowledge(request: AddKnowledgeRequest, current_user: dict = Depen
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============================================================
+# 外部 API 代理接口
+# ============================================================
+FM_SSR_API_BASE = "http://fm-ssr-api.zhuanzhitech.com"
+
+
+@app.get("/api/proxy/file-urls")
+async def proxy_file_urls(
+    file_ids: str,
+    authorization: str = None
+):
+    """
+    代理获取文件 URL 列表
+    绕过 CORS 限制，使用 curl_cffi 绕过 WAF
+    """
+    import random
+    import time
+
+    try:
+        from curl_cffi import requests as cffi_requests
+    except ImportError:
+        import requests as cffi_requests
+
+    url = f"{FM_SSR_API_BASE}/api/v1/file-url-list-by-ids"
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    }
+
+    if authorization:
+        headers["Authorization"] = authorization
+
+    max_retries = 3
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            fingerprints = ["chrome120", "chrome119", "chrome110", "edge101", "safari15_5"]
+            fingerprint = random.choice(fingerprints)
+
+            response = cffi_requests.get(
+                url,
+                params={"file_ids": file_ids},
+                headers=headers,
+                timeout=30,
+                impersonate=fingerprint
+            )
+
+            if response.status_code != 200:
+                response_text = response.text
+                if "<!doctype html>" in response_text.lower() or "bunker" in response_text.lower():
+                    logger.warning(f"文件URL代理被WAF拦截 (尝试 {attempt + 1}/{max_retries})")
+                    last_error = Exception(f"WAF 拦截: {response.status_code}")
+                    time.sleep(1 + random.random())
+                    continue
+                raise HTTPException(status_code=response.status_code, detail=response_text)
+
+            return response.json()
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                logger.warning(f"文件URL代理请求失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                time.sleep(1 + random.random())
+                continue
+            raise HTTPException(status_code=500, detail=str(last_error))
+
+    raise HTTPException(status_code=500, detail=str(last_error))
+
+
 @app.get("/health")
 async def health():
     """健康检查"""
