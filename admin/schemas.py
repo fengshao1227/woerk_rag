@@ -157,6 +157,21 @@ class KnowledgeListResponse(BaseModel):
     total_pages: int
 
 
+class KnowledgeDetailResponse(BaseModel):
+    """知识条目详情（包含完整内容）"""
+    id: int
+    qdrant_id: str
+    title: Optional[str]
+    category: str
+    summary: Optional[str]
+    keywords: Optional[List[str]]
+    tech_stack: Optional[List[str]]
+    content: Optional[str] = None  # 完整内容（从Qdrant获取）
+    content_preview: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+
 class KnowledgeImportRequest(BaseModel):
     entries: List[dict]  # 批量导入的条目
 

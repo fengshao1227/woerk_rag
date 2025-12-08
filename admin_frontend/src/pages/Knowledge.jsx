@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Space, Tag, Upload } from 'antd';
-import { EditOutlined, DeleteOutlined, SearchOutlined, ExportOutlined, ImportOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Space, Tag, Upload, Spin } from 'antd';
+import { EditOutlined, DeleteOutlined, SearchOutlined, ExportOutlined, ImportOutlined, EyeOutlined } from '@ant-design/icons';
 import { knowledgeAPI } from '../services/api';
 
 export default function Knowledge() {
@@ -12,6 +12,9 @@ export default function Knowledge() {
   const [editingId, setEditingId] = useState(null);
   const [form] = Form.useForm();
   const [importing, setImporting] = useState(false);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailData, setDetailData] = useState(null);
 
   const loadData = async (page = 1, pageSize = 20) => {
     setLoading(true);
@@ -93,6 +96,19 @@ export default function Knowledge() {
     return false; // 阻止默认上传行为
   };
 
+  const handleViewDetail = async (record) => {
+    setDetailModalOpen(true);
+    setDetailLoading(true);
+    try {
+      const { data } = await knowledgeAPI.get(record.id);
+      setDetailData(data);
+    } catch (error) {
+      message.error('获取详情失败');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '标题', dataIndex: 'title', ellipsis: true },
@@ -104,6 +120,7 @@ export default function Knowledge() {
       title: '操作',
       render: (_, record) => (
         <Space>
+          <Button size="small" icon={<EyeOutlined />} onClick={() => handleViewDetail(record)} />
           <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Popconfirm title="确认删除?" onConfirm={() => handleDelete(record.id)}>
             <Button size="small" danger icon={<DeleteOutlined />} />
@@ -176,6 +193,67 @@ export default function Knowledge() {
             <Button type="primary" htmlType="submit" block>提交</Button>
           </Form.Item>
         </Form>
+      </Modal>
+      <Modal
+        title="知识条目详情"
+        open={detailModalOpen}
+        onCancel={() => { setDetailModalOpen(false); setDetailData(null); }}
+        footer={null}
+        width={800}
+      >
+        {detailLoading ? (
+          <div style={{ textAlign: 'center', padding: '40px' }}>
+            <Spin size="large" />
+          </div>
+        ) : detailData ? (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <strong>标题：</strong>{detailData.title || '无标题'}
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <strong>分类：</strong><Tag>{detailData.category}</Tag>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <strong>摘要：</strong>
+              <div style={{ marginTop: 8, color: '#666' }}>{detailData.summary || '无摘要'}</div>
+            </div>
+            {detailData.keywords?.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <strong>关键词：</strong>
+                <div style={{ marginTop: 8 }}>
+                  {detailData.keywords.map(k => <Tag key={k} color="blue">{k}</Tag>)}
+                </div>
+              </div>
+            )}
+            {detailData.tech_stack?.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <strong>技术栈：</strong>
+                <div style={{ marginTop: 8 }}>
+                  {detailData.tech_stack.map(t => <Tag key={t} color="green">{t}</Tag>)}
+                </div>
+              </div>
+            )}
+            <div style={{ marginBottom: 16 }}>
+              <strong>完整内容：</strong>
+              <div style={{
+                marginTop: 8,
+                padding: 16,
+                background: '#f5f5f5',
+                borderRadius: 4,
+                maxHeight: 400,
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'monospace',
+                fontSize: 13
+              }}>
+                {detailData.content || detailData.content_preview || '无内容'}
+              </div>
+            </div>
+            <div style={{ color: '#999', fontSize: 12 }}>
+              创建时间：{new Date(detailData.created_at).toLocaleString()}
+            </div>
+          </div>
+        ) : null}
       </Modal>
     </div>
   );

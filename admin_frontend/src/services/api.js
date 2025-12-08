@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = 'http://103.96.72.4:8000/admin/api';
+const API_BASE = 'https://rag.litxczv.shop/admin/api';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -16,7 +16,9 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   response => response,
   error => {
-    if (error.response?.status === 401) {
+    // 排除登录接口，避免循环重定向
+    const isLoginRequest = error.config?.url?.includes('/auth/login');
+    if (error.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('token');
       window.location.href = '/login';
     }

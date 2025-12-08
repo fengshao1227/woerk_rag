@@ -13,7 +13,7 @@ from admin.schemas import (
     LoginRequest, TokenResponse, UserResponse,
     ProviderCreate, ProviderUpdate, ProviderResponse,
     ModelCreate, ModelUpdate, ModelResponse,
-    KnowledgeUpdate, KnowledgeResponse, KnowledgeListResponse,
+    KnowledgeUpdate, KnowledgeResponse, KnowledgeListResponse, KnowledgeDetailResponse,
     MessageResponse, StatsResponse,
     UsageLogResponse, UsageStatsResponse, TestModelRequest, TestModelResponse
 )
@@ -493,18 +493,53 @@ async def list_knowledge(
     )
 
 
-@router.get("/knowledge/{knowledge_id}", response_model=KnowledgeResponse)
+@router.get("/knowledge/{knowledge_id}", response_model=KnowledgeDetailResponse)
 async def get_knowledge(
     knowledge_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取知识条目详情"""
+    """获取知识条目详情（包含完整内容）"""
     entry = db.query(KnowledgeEntry).filter(KnowledgeEntry.id == knowledge_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="知识条目不存在")
 
-    return KnowledgeResponse.model_validate(entry)
+    # 从 Qdrant 获取完整内容
+    content = None
+    try:
+        from qdrant_client import QdrantClient
+        from config import QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY, QDRANT_COLLECTION_NAME, QDRANT_USE_HTTPS
+
+        protocol = "https" if QDRANT_USE_HTTPS else "http"
+        url = f"{protocol}://{QDRANT_HOST}:{QDRANT_PORT}"
+        client = QdrantClient(url=url, api_key=QDRANT_API_KEY if QDRANT_API_KEY else None)
+
+        # 通过 qdrant_id 获取完整内容
+        points = client.retrieve(
+            collection_name=QDRANT_COLLECTION_NAME,
+            ids=[entry.qdrant_id],
+            with_payload=True,
+            with_vectors=False
+        )
+        if points:
+            content = points[0].payload.get('content') or points[0].payload.get('original_content')
+    except Exception as e:
+        # 获取失败时使用 content_preview
+        content = entry.content_preview
+
+    return KnowledgeDetailResponse(
+        id=entry.id,
+        qdrant_id=entry.qdrant_id,
+        title=entry.title,
+        category=entry.category,
+        summary=entry.summary,
+        keywords=entry.keywords,
+        tech_stack=entry.tech_stack,
+        content=content,
+        content_preview=entry.content_preview,
+        created_at=entry.created_at,
+        updated_at=entry.updated_at
+    )
 
 
 @router.put("/knowledge/{knowledge_id}", response_model=KnowledgeResponse)
