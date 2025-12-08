@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG 知识库助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .chat-container {
+            width: 100%;
+            max-width: 900px;
+            height: 90vh;
+            background: #fff;
+            border-radius: 20px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .chat-header .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background: #4ade80;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-btn {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .header-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .message {
+            display: flex;
+            gap: 15px;
+            max-width: 85%;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .message-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .message.assistant .message-avatar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .message.user .message-avatar {
+            background: #e5e7eb;
+        }
+
+        .message-content {
+            padding: 15px 20px;
+            border-radius: 20px;
+            line-height: 1.6;
+        }
+
+        .message.assistant .message-content {
+            background: #f3f4f6;
+            border-bottom-left-radius: 5px;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 5px;
+        }
+
+        .message-content pre {
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 15px;
+            border-radius: 10px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+
+        .message-content code {
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9rem;
+        }
+
+        .message-sources {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 0.85rem;
+            color: #6b7280;
+        }
+
+        .message-sources summary {
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .message-sources ul {
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+
+        .message-sources li {
+            margin: 5px 0;
+        }
+
+        .chat-input-container {
+            padding: 20px 30px;
+            border-top: 1px solid #e5e7eb;
+            background: #fafafa;
+        }
+
+        .chat-input-wrapper {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+        }
+
+        .chat-input {
+            flex: 1;
+            border: 2px solid #e5e7eb;
+            border-radius: 15px;
+            padding: 15px 20px;
+            font-size: 1rem;
+            resize: none;
+            outline: none;
+            transition: border-color 0.3s;
+            max-height: 150px;
+            font-family: inherit;
+        }
+
+        .chat-input:focus {
+            border-color: #667eea;
+        }
+
+        .send-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 15px;
+            padding: 15px 30px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            font-weight: 500;
+        }
+
+        .send-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px -10px rgba(102, 126, 234, 0.5);
+        }
+
+        .send-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .typing-indicator {
+            display: flex;
+            gap: 5px;
+            padding: 15px 20px;
+            background: #f3f4f6;
+            border-radius: 20px;
+            width: fit-content;
+        }
+
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: #9ca3af;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+
+        .welcome-message {
+            text-align: center;
+            color: #6b7280;
+            padding: 40px;
+        }
+
+        .welcome-message h2 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            color: #374151;
+        }
+
+        .welcome-message p {
+            margin-bottom: 20px;
+        }
+
+        .example-queries {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .example-query {
+            background: #f3f4f6;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .example-query:hover {
+            background: #e5e7eb;
+        }
+
+        /* Modal 样式 */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            font-size: 1.3rem;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 5px;
+        }
+
+        .modal-body {
+            padding: 25px;
+            overflow-y: auto;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            min-height: 200px;
+            resize: vertical;
+        }
+
+        .modal-footer {
+            padding: 20px 25px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: flex-end;
+            gap: 15px;
+        }
+
+        .btn {
+            padding: 12px 25px;
+            border-radius: 10px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary {
+            background: #e5e7eb;
+            border: none;
+            color: #374151;
+        }
+
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px -5px rgba(102, 126, 234, 0.5);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 提取结果显示 */
+        .extracted-info {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .extracted-info h4 {
+            color: #166534;
+            margin-bottom: 10px;
+        }
+
+        .extracted-info .info-item {
+            margin: 5px 0;
+            font-size: 0.9rem;
+        }
+
+        .extracted-info .info-label {
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .tag {
+            display: inline-block;
+            background: #e0e7ff;
+            color: #3730a3;
+            padding: 3px 10px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            margin: 2px;
+        }
+
+        .success-message {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            color: #166534;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1>RAG 知识库助手</h1>
+            <div class="header-actions">
+                <div class="status">
+                    <span class="status-dot"></span>
+                    <span>在线</span>
+                </div>
+                <button class="header-btn" onclick="openAddKnowledgeModal()">
+                    <span>+</span> 添加知识
+                </button>
+                <button class="header-btn" onclick="clearHistory()">清空对话</button>
+            </div>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="welcome-message">
+                <h2>欢迎使用 RAG 知识库助手</h2>
+                <p>我可以帮你查询知识库中的信息，请输入你的问题</p>
+                <div class="example-queries">
+                    <span class="example-query" onclick="askQuestion(this.textContent)">RAG 系统有哪些核心组件？</span>
+                    <span class="example-query" onclick="askQuestion(this.textContent)">如何使用向量检索？</span>
+                    <span class="example-query" onclick="askQuestion(this.textContent)">什么是 Reranker？</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-input-container">
+            <div class="chat-input-wrapper">
+                <textarea
+                    class="chat-input"
+                    id="chatInput"
+                    placeholder="输入你的问题..."
+                    rows="1"
+                    onkeydown="handleKeyDown(event)"
+                    oninput="autoResize(this)"
+                ></textarea>
+                <button class="send-button" id="sendButton" onclick="sendMessage()">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加知识 Modal -->
+    <div class="modal-overlay" id="addKnowledgeModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>添加知识</h2>
+                <button class="modal-close" onclick="closeAddKnowledgeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="successMessage" class="success-message" style="display: none;">
+                    知识添加成功！
+                </div>
+                <div class="form-group">
+                    <label for="knowledgeTitle">标题（可选）</label>
+                    <input type="text" id="knowledgeTitle" placeholder="AI 会自动提取标题">
+                </div>
+                <div class="form-group">
+                    <label for="knowledgeCategory">分类</label>
+                    <select id="knowledgeCategory">
+                        <option value="project">项目经验</option>
+                        <option value="skill">技术技能</option>
+                        <option value="experience">工作经历</option>
+                        <option value="note">学习笔记</option>
+                        <option value="other">其他</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="knowledgeContent">内容 *</label>
+                    <textarea id="knowledgeContent" placeholder="输入你想添加的知识内容...&#10;&#10;例如：&#10;今天完成了 RAG 系统的 Reranker 模块开发，使用 BAAI/bge-reranker-base 模型实现了检索结果重排序，显著提升了检索精度。主要技术栈包括 Python、FastAPI、Qdrant、LangChain。"></textarea>
+                </div>
+                <div id="extractedInfo" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeAddKnowledgeModal()">取消</button>
+                <button class="btn btn-primary" id="addKnowledgeBtn" onclick="addKnowledge()">添加到知识库</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatMessages = document.getElementById('chatMessages');
+        const chatInput = document.getElementById('chatInput');
+        const sendButton = document.getElementById('sendButton');
+
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
+        }
+
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function askQuestion(question) {
+            chatInput.value = question;
+            sendMessage();
+        }
+
+        function addMessage(content, isUser, sources = null) {
+            const welcome = document.querySelector('.welcome-message');
+            if (welcome) welcome.remove();
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'assistant'}`;
+
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            avatar.textContent = isUser ? '👤' : '🤖';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+
+            let html = content
+                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n/g, '<br>');
+
+            contentDiv.innerHTML = html;
+
+            if (sources && sources.length > 0) {
+                const sourcesDiv = document.createElement('div');
+                sourcesDiv.className = 'message-sources';
+                sourcesDiv.innerHTML = `
+                    <details>
+                        <summary>📚 参考来源 (${sources.length})</summary>
+                        <ul>
+                            ${sources.map(s => `<li>${s.file_path} (相似度: ${(s.score * 100).toFixed(1)}%)</li>`).join('')}
+                        </ul>
+                    </details>
+                `;
+                contentDiv.appendChild(sourcesDiv);
+            }
+
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(contentDiv);
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function addTypingIndicator() {
+            const indicator = document.createElement('div');
+            indicator.className = 'message assistant';
+            indicator.id = 'typingIndicator';
+            indicator.innerHTML = `
+                <div class="message-avatar">🤖</div>
+                <div class="typing-indicator">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+            chatMessages.appendChild(indicator);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function removeTypingIndicator() {
+            const indicator = document.getElementById('typingIndicator');
+            if (indicator) indicator.remove();
+        }
+
+        async function sendMessage() {
+            const message = chatInput.value.trim();
+            if (!message) return;
+
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+            sendButton.disabled = true;
+            addMessage(message, true);
+            addTypingIndicator();
+
+            try {
+                const response = await fetch('/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: message, top_k: 5, use_history: true }),
+                });
+
+                const data = await response.json();
+                removeTypingIndicator();
+
+                if (response.ok) {
+                    addMessage(data.answer, false, data.sources);
+                } else {
+                    addMessage('抱歉，发生了错误：' + (data.detail || '未知错误'), false);
+                }
+            } catch (error) {
+                removeTypingIndicator();
+                addMessage('抱歉，网络连接失败，请稍后重试。', false);
+            }
+
+            sendButton.disabled = false;
+            chatInput.focus();
+        }
+
+        async function clearHistory() {
+            try {
+                await fetch('/clear_history', { method: 'POST' });
+                chatMessages.innerHTML = `
+                    <div class="welcome-message">
+                        <h2>欢迎使用 RAG 知识库助手</h2>
+                        <p>对话历史已清空，请输入新的问题</p>
+                        <div class="example-queries">
+                            <span class="example-query" onclick="askQuestion(this.textContent)">RAG 系统有哪些核心组件？</span>
+                            <span class="example-query" onclick="askQuestion(this.textContent)">如何使用向量检索？</span>
+                            <span class="example-query" onclick="askQuestion(this.textContent)">什么是 Reranker？</span>
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('清空历史失败:', error);
+            }
+        }
+
+        // 添加知识 Modal 功能
+        function openAddKnowledgeModal() {
+            document.getElementById('addKnowledgeModal').classList.add('active');
+            document.getElementById('knowledgeContent').focus();
+        }
+
+        function closeAddKnowledgeModal() {
+            document.getElementById('addKnowledgeModal').classList.remove('active');
+            document.getElementById('knowledgeTitle').value = '';
+            document.getElementById('knowledgeContent').value = '';
+            document.getElementById('extractedInfo').style.display = 'none';
+            document.getElementById('successMessage').style.display = 'none';
+        }
+
+        async function addKnowledge() {
+            const title = document.getElementById('knowledgeTitle').value.trim();
+            const category = document.getElementById('knowledgeCategory').value;
+            const content = document.getElementById('knowledgeContent').value.trim();
+
+            if (!content) {
+                alert('请输入知识内容');
+                return;
+            }
+
+            const addBtn = document.getElementById('addKnowledgeBtn');
+            addBtn.disabled = true;
+            addBtn.textContent = 'AI 分析中...';
+
+            try {
+                const response = await fetch('/add_knowledge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content, title: title || null, category }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // 显示成功消息
+                    document.getElementById('successMessage').style.display = 'block';
+
+                    // 显示提取的信息
+                    if (data.extracted_info) {
+                        const info = data.extracted_info;
+                        document.getElementById('extractedInfo').innerHTML = `
+                            <div class="extracted-info">
+                                <h4>✨ AI 提取的信息</h4>
+                                <div class="info-item"><span class="info-label">标题：</span>${info.title || '未知'}</div>
+                                <div class="info-item"><span class="info-label">摘要：</span>${info.summary || '无'}</div>
+                                <div class="info-item"><span class="info-label">关键词：</span>${(info.keywords || []).map(k => `<span class="tag">${k}</span>`).join('')}</div>
+                                <div class="info-item"><span class="info-label">技术栈：</span>${(info.tech_stack || []).map(t => `<span class="tag">${t}</span>`).join('')}</div>
+                                <div class="info-item"><span class="info-label">类型：</span>${info.type || category}</div>
+                            </div>
+                        `;
+                        document.getElementById('extractedInfo').style.display = 'block';
+                    }
+
+                    // 清空内容
+                    document.getElementById('knowledgeTitle').value = '';
+                    document.getElementById('knowledgeContent').value = '';
+
+                    // 3秒后自动关闭
+                    setTimeout(() => {
+                        closeAddKnowledgeModal();
+                    }, 3000);
+                } else {
+                    alert('添加失败：' + (data.detail || data.message || '未知错误'));
+                }
+            } catch (error) {
+                alert('网络错误，请稍后重试');
+                console.error('添加知识失败:', error);
+            }
+
+            addBtn.disabled = false;
+            addBtn.textContent = '添加到知识库';
+        }
+
+        chatInput.focus();
+    </script>
+</body>
+</html>
