@@ -2,10 +2,7 @@
   "mcpServers": {
     "rag-knowledge": {
       "command": "/Users/li/Desktop/work7_8/www/rag/venv/bin/python",
-      "args": ["/Users/li/Desktop/work7_8/www/rag/mcp_server/server.py"],
-      "env": {
-        "PYTHONPATH": "/Users/li/Desktop/work7_8/www/rag"
-      }
+      "args": ["/Users/li/Desktop/work7_8/www/rag/mcp_server/server.py"]
     }
   }
 }
