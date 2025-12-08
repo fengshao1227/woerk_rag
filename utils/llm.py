@@ -88,13 +88,25 @@ class AnthropicLLM(BaseLLM):
 
             result = response.json()
 
-            # 解析响应
-            if "content" in result and len(result["content"]) > 0:
-                return result["content"][0]["text"]
+            # 解析响应 - 兼容多种格式
+            if "content" in result:
+                content = result["content"]
+                # Anthropic 标准格式: content 是列表
+                if isinstance(content, list) and len(content) > 0:
+                    first_item = content[0]
+                    if isinstance(first_item, dict) and "text" in first_item:
+                        return first_item["text"]
+                    elif isinstance(first_item, str):
+                        return first_item
+                    else:
+                        return str(first_item)
+                # content 直接是字符串
+                elif isinstance(content, str):
+                    return content
             elif "error" in result:
                 raise Exception(f"API 错误: {result['error']}")
-            else:
-                return str(result)
+
+            return str(result)
 
         except Exception as e:
             logger.error(f"AnthropicLLM 调用失败: {e}")
@@ -172,11 +184,24 @@ class OpenAILLM(BaseLLM):
                 if "choices" in result and len(result["choices"]) > 0:
                     choice = result["choices"][0]
                     if "message" in choice:
-                        return choice["message"].get("content", "")
+                        content = choice["message"].get("content", "")
+                        # 处理 content 可能是列表的情况
+                        if isinstance(content, list) and len(content) > 0:
+                            first_item = content[0]
+                            if isinstance(first_item, dict) and "text" in first_item:
+                                return first_item["text"]
+                            return str(first_item)
+                        return content if isinstance(content, str) else str(content)
                     elif "text" in choice:
                         return choice["text"]
                 elif "content" in result:
-                    return result["content"]
+                    content = result["content"]
+                    if isinstance(content, list) and len(content) > 0:
+                        first_item = content[0]
+                        if isinstance(first_item, dict) and "text" in first_item:
+                            return first_item["text"]
+                        return str(first_item)
+                    return content if isinstance(content, str) else str(content)
                 elif "text" in result:
                     return result["text"]
                 elif "error" in result:
