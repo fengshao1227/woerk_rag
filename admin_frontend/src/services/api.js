@@ -3,6 +3,16 @@ import axios from 'axios';
 const API_BASE = 'https://rag.litxczv.shop/admin/api';
 const RAG_API_BASE = 'https://rag.litxczv.shop';
 
+// 共享的请求拦截器
+const addAuthToken = (config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+};
+
 const api = axios.create({
   baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' }
@@ -14,18 +24,9 @@ const ragApi = axios.create({
   headers: { 'Content-Type': 'application/json' }
 });
 
-// ragApi 也需要带 token
-ragApi.interceptors.request.use(config => {
-  const token = localStorage.getItem('token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-api.interceptors.request.use(config => {
-  const token = localStorage.getItem('token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
+// 两个实例都添加 token 拦截器
+api.interceptors.request.use(addAuthToken);
+ragApi.interceptors.request.use(addAuthToken);
 
 api.interceptors.response.use(
   response => response,
