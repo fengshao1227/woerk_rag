@@ -25,7 +25,7 @@ export default function Login() {
 
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f0f2f5' }}>
-      <Card title="RAG 后台管理系统" style={{ width: 400 }}>
+      <Card title="AI 知识库管理系统" style={{ width: 400 }}>
         <Form onFinish={onFinish} autoComplete="off">
           <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
             <Input prefix={<UserOutlined />} placeholder="用户名" />

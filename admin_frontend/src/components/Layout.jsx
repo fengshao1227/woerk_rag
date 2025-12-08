@@ -26,7 +26,7 @@ export default function Layout() {
     <AntLayout style={{ minHeight: '100vh' }}>
       <Sider>
         <div style={{ color: '#fff', padding: '16px', fontSize: '18px', fontWeight: 'bold' }}>
-          RAG Admin
+          AI 知识库
         </div>
         <Menu
           theme="dark"
@@ -38,7 +38,7 @@ export default function Layout() {
       </Sider>
       <AntLayout>
         <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: '20px', fontWeight: 'bold' }}>后台管理系统</div>
+          <div style={{ fontSize: '20px', fontWeight: 'bold' }}>知识库管理系统</div>
           <LogoutOutlined onClick={handleLogout} style={{ fontSize: '18px', cursor: 'pointer' }} />
         </Header>
         <Content style={{ margin: '24px', background: '#fff', padding: '24px' }}>
