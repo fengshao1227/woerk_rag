@@ -127,7 +127,24 @@ class OpenAILLM(BaseLLM):
                 max_tokens=self.max_tokens
             )
 
-            return response.choices[0].message.content
+            # 兼容不同的返回格式
+            if isinstance(response, str):
+                # 某些第三方 API 直接返回字符串
+                return response
+            elif hasattr(response, 'choices'):
+                # 标准 OpenAI 格式
+                return response.choices[0].message.content
+            elif isinstance(response, dict):
+                # 字典格式
+                if 'choices' in response:
+                    return response['choices'][0]['message']['content']
+                elif 'content' in response:
+                    return response['content']
+                elif 'text' in response:
+                    return response['text']
+
+            # 最后尝试转为字符串
+            return str(response)
 
         except Exception as e:
             logger.error(f"OpenAILLM 调用失败: {e}")
