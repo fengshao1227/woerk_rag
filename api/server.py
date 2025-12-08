@@ -1,9 +1,9 @@
 """
 FastAPI 服务
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict
@@ -24,8 +24,9 @@ from config import QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY, QDRANT_COLLECTION_N
 import hashlib
 from datetime import datetime
 
-# 导入后台管理路由
+# 导入后台管理路由和认证
 from admin.routes import router as admin_router
+from admin.auth import get_current_user
 
 app = FastAPI(title="RAG API", version="1.0.0")
 
@@ -112,8 +113,8 @@ class AddKnowledgeResponse(BaseModel):
 
 
 @app.post("/query", response_model=QueryResponse)
-async def query(request: QueryRequest):
-    """问答接口"""
+async def query(request: QueryRequest, current_user: dict = Depends(get_current_user)):
+    """问答接口（需要登录）"""
     try:
         result = qa_chain.query(
             question=request.question,
@@ -128,8 +129,8 @@ async def query(request: QueryRequest):
 
 
 @app.post("/search")
-async def search(request: SearchRequest):
-    """向量检索接口"""
+async def search(request: SearchRequest, current_user: dict = Depends(get_current_user)):
+    """向量检索接口（需要登录）"""
     try:
         results = vector_store.search(
             query=request.query,
@@ -143,9 +144,9 @@ async def search(request: SearchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/clear_history")
-async def clear_history():
-    """清空对话历史"""
+@app.post("/clear-history")
+async def clear_history(current_user: dict = Depends(get_current_user)):
+    """清空对话历史（需要登录）"""
     try:
         qa_chain.clear_history()
         return {"message": "对话历史已清空"}
@@ -155,8 +156,8 @@ async def clear_history():
 
 
 @app.post("/add_knowledge", response_model=AddKnowledgeResponse)
-async def add_knowledge(request: AddKnowledgeRequest):
-    """添加知识到知识库"""
+async def add_knowledge(request: AddKnowledgeRequest, current_user: dict = Depends(get_current_user)):
+    """添加知识到知识库（需要登录）"""
     try:
         # 1. 用 LLM 提取关键信息
         extract_prompt = f"""请分析以下内容，提取关键信息并返回 JSON 格式：
@@ -258,8 +259,8 @@ async def health():
 
 @app.get("/")
 async def root():
-    """返回前端页面"""
-    return FileResponse(STATIC_DIR / "index.html")
+    """重定向到后台管理"""
+    return RedirectResponse(url="/admin", status_code=302)
 
 
 # Admin 前端路由（SPA，需要处理所有子路由）

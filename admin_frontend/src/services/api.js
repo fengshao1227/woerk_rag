@@ -8,10 +8,17 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' }
 });
 
-// RAG 问答 API（根路径）
+// RAG 问答 API（根路径，需要认证）
 const ragApi = axios.create({
   baseURL: RAG_API_BASE,
   headers: { 'Content-Type': 'application/json' }
+});
+
+// ragApi 也需要带 token
+ragApi.interceptors.request.use(config => {
+  const token = localStorage.getItem('token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
 });
 
 api.interceptors.request.use(config => {
