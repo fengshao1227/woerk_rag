@@ -85,30 +85,21 @@ echo -e "${GREEN}✓ 上传完成${NC}"
 
 # 6. 拉取代码并重启服务
 echo -e "${YELLOW}[6/6] 更新服务器并重启服务...${NC}"
-ssh $SERVER << 'ENDSSH'
-    cd ~/rag
+# 拉取代码
+ssh $SERVER "cd $REMOTE_DIR && git pull origin main"
 
-    # 拉取最新代码
-    echo "拉取最新代码..."
-    git pull origin main
+# 重启服务（使用单独的命令避免 nohup 问题）
+ssh $SERVER "fuser -k 8000/tcp 2>/dev/null || true"
+sleep 2
+ssh $SERVER "cd $REMOTE_DIR && source venv/bin/activate && nohup python api/server.py > server.log 2>&1 &"
+sleep 5
 
-    # 重启服务
-    echo "重启服务..."
-    fuser -k 8000/tcp 2>/dev/null || true
-    sleep 2
-
-    source venv/bin/activate
-    nohup python api/server.py > server.log 2>&1 &
-
-    sleep 3
-
-    # 检查服务状态
-    if curl -s http://localhost:8000/health > /dev/null; then
-        echo "✓ 服务启动成功"
-    else
-        echo "⚠ 服务可能未正常启动，请检查 server.log"
-    fi
-ENDSSH
+# 检查服务状态
+if curl -s https://rag.litxczv.shop/health > /dev/null; then
+    echo -e "${GREEN}✓ 服务启动成功${NC}"
+else
+    echo -e "${YELLOW}⚠ 服务可能未正常启动，请手动检查${NC}"
+fi
 echo -e "${GREEN}✓ 服务已重启${NC}"
 
 # 7. 清理本地构建产物
