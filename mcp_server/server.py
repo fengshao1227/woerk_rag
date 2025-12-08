@@ -85,7 +85,8 @@ def search(query_text: str, top_k: int = 5) -> str:
                 json={"query": query_text, "top_k": top_k}
             )
             response.raise_for_status()
-            results = response.json()
+            data = response.json()
+            results = data.get("results", [])
 
         if not results:
             return "未找到相关内容"
