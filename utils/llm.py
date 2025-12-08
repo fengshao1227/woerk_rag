@@ -44,73 +44,92 @@ class AnthropicLLM(BaseLLM):
         self.max_tokens = max_tokens
         logger.info(f"AnthropicLLM 初始化: model={model}, base_url={self.base_url}")
 
-    def invoke(self, messages: List[Dict[str, str]]) -> str:
-        """调用 Anthropic 格式 API"""
+    def invoke(self, messages: List[Dict[str, str]], max_retries: int = 3) -> str:
+        """调用 Anthropic 格式 API，带重试机制"""
+        import time
+        import random
+
         try:
             from curl_cffi import requests as cffi_requests
         except ImportError:
-            # 如果没有 curl_cffi，回退到普通请求
             logger.warning("curl_cffi 未安装，使用标准 requests")
             import requests as cffi_requests
 
-        try:
-            # 构建请求
-            url = f"{self.base_url.rstrip('/')}/v1/messages"
-            headers = {
-                "Content-Type": "application/json",
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/json",
-            }
+        url = f"{self.base_url.rstrip('/')}/v1/messages"
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+        }
+        api_messages = [{"role": msg["role"], "content": msg["content"]} for msg in messages]
+        data = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+            "messages": api_messages
+        }
 
-            # 转换消息格式
-            api_messages = [{"role": msg["role"], "content": msg["content"]} for msg in messages]
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                # 随机选择浏览器指纹，增加绕过 WAF 成功率
+                fingerprints = ["chrome120", "chrome119", "chrome110", "edge101", "safari15_5"]
+                fingerprint = random.choice(fingerprints)
 
-            data = {
-                "model": self.model,
-                "max_tokens": self.max_tokens,
-                "temperature": self.temperature,
-                "messages": api_messages
-            }
+                response = cffi_requests.post(
+                    url,
+                    headers=headers,
+                    json=data,
+                    timeout=120,
+                    impersonate=fingerprint
+                )
 
-            # 使用 curl_cffi 发送请求（模拟 Chrome 浏览器指纹）
-            response = cffi_requests.post(
-                url,
-                headers=headers,
-                json=data,
-                timeout=120,
-                impersonate="chrome120"  # 模拟 Chrome 120 的 TLS 指纹
-            )
+                # 检查是否被 WAF 拦截（返回 HTML 而不是 JSON）
+                if response.status_code != 200:
+                    response_text = response.text
+                    if "<!doctype html>" in response_text.lower() or "bunker" in response_text.lower():
+                        logger.warning(f"请求被 WAF 拦截 (尝试 {attempt + 1}/{max_retries})，切换指纹重试...")
+                        last_error = Exception(f"API 被 WAF 拦截: {response.status_code}")
+                        time.sleep(1 + random.random())  # 随机延迟 1-2 秒
+                        continue
+                    raise Exception(f"API 错误: {response.status_code} - {response_text}")
 
-            if response.status_code != 200:
-                raise Exception(f"API 错误: {response.status_code} - {response.text}")
+                result = response.json()
 
-            result = response.json()
+                # 解析响应 - 兼容多种格式
+                if "content" in result:
+                    content = result["content"]
+                    # Anthropic 标准格式: content 是列表
+                    if isinstance(content, list) and len(content) > 0:
+                        first_item = content[0]
+                        if isinstance(first_item, dict) and "text" in first_item:
+                            return first_item["text"]
+                        elif isinstance(first_item, str):
+                            return first_item
+                        else:
+                            return str(first_item)
+                    # content 直接是字符串
+                    elif isinstance(content, str):
+                        return content
+                elif "error" in result:
+                    raise Exception(f"API 错误: {result['error']}")
 
-            # 解析响应 - 兼容多种格式
-            if "content" in result:
-                content = result["content"]
-                # Anthropic 标准格式: content 是列表
-                if isinstance(content, list) and len(content) > 0:
-                    first_item = content[0]
-                    if isinstance(first_item, dict) and "text" in first_item:
-                        return first_item["text"]
-                    elif isinstance(first_item, str):
-                        return first_item
-                    else:
-                        return str(first_item)
-                # content 直接是字符串
-                elif isinstance(content, str):
-                    return content
-            elif "error" in result:
-                raise Exception(f"API 错误: {result['error']}")
+                return str(result)
 
-            return str(result)
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    logger.warning(f"请求失败 (尝试 {attempt + 1}/{max_retries}): {e}，重试中...")
+                    time.sleep(1 + random.random())
+                    continue
+                raise
 
-        except Exception as e:
-            logger.error(f"AnthropicLLM 调用失败: {e}")
-            raise
+        # 所有重试都失败
+        if last_error:
+            logger.error(f"AnthropicLLM 调用失败（已重试 {max_retries} 次）: {last_error}")
+            raise last_error
 
 
 class OpenAILLM(BaseLLM):
@@ -131,87 +150,108 @@ class OpenAILLM(BaseLLM):
         self.max_tokens = max_tokens
         logger.info(f"OpenAILLM 初始化: model={model}, base_url={self.base_url}")
 
-    def invoke(self, messages: List[Dict[str, str]]) -> str:
-        """调用 OpenAI 格式 API"""
+    def invoke(self, messages: List[Dict[str, str]], max_retries: int = 3) -> str:
+        """调用 OpenAI 格式 API，带重试机制"""
+        import time
+        import random
+
         try:
             from curl_cffi import requests as cffi_requests
         except ImportError:
-            # 如果没有 curl_cffi，回退到普通请求
             logger.warning("curl_cffi 未安装，使用标准 requests")
             import requests as cffi_requests
 
-        try:
-            # 构建请求 URL
-            base = self.base_url.rstrip('/')
-            # 如果 base_url 不以 /v1 结尾，添加 /v1
-            if not base.endswith('/v1'):
-                base = f"{base}/v1"
-            url = f"{base}/chat/completions"
+        # 构建请求 URL
+        base = self.base_url.rstrip('/')
+        if not base.endswith('/v1'):
+            base = f"{base}/v1"
+        url = f"{base}/chat/completions"
 
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/json",
-                "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
-            }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+        }
+        data = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens
+        }
 
-            data = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens
-            }
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                # 随机选择浏览器指纹
+                fingerprints = ["chrome120", "chrome119", "chrome110", "edge101", "safari15_5"]
+                fingerprint = random.choice(fingerprints)
 
-            # 使用 curl_cffi 发送请求（模拟 Chrome 浏览器指纹）
-            response = cffi_requests.post(
-                url,
-                headers=headers,
-                json=data,
-                timeout=120,
-                impersonate="chrome120"  # 模拟 Chrome 120 的 TLS 指纹
-            )
+                response = cffi_requests.post(
+                    url,
+                    headers=headers,
+                    json=data,
+                    timeout=120,
+                    impersonate=fingerprint
+                )
 
-            if response.status_code != 200:
-                raise Exception(f"API 错误: {response.status_code} - {response.text}")
+                # 检查是否被 WAF 或内容审核拦截
+                if response.status_code != 200:
+                    response_text = response.text
+                    # WAF 拦截或内容审核拦截，可以重试
+                    if any(x in response_text.lower() for x in ["<!doctype html>", "bunker", "moderation", "blocked"]):
+                        logger.warning(f"请求被拦截 (尝试 {attempt + 1}/{max_retries})，重试中...")
+                        last_error = Exception(f"API 被拦截: {response.status_code}")
+                        time.sleep(1 + random.random())
+                        continue
+                    raise Exception(f"API 错误: {response.status_code} - {response_text}")
 
-            result = response.json()
+                result = response.json()
 
-            # 兼容不同的返回格式
-            if isinstance(result, str):
-                return result
-            elif isinstance(result, dict):
-                if "choices" in result and len(result["choices"]) > 0:
-                    choice = result["choices"][0]
-                    if "message" in choice:
-                        content = choice["message"].get("content", "")
-                        # 处理 content 可能是列表的情况
+                # 兼容不同的返回格式
+                if isinstance(result, str):
+                    return result
+                elif isinstance(result, dict):
+                    if "choices" in result and len(result["choices"]) > 0:
+                        choice = result["choices"][0]
+                        if "message" in choice:
+                            content = choice["message"].get("content", "")
+                            if isinstance(content, list) and len(content) > 0:
+                                first_item = content[0]
+                                if isinstance(first_item, dict) and "text" in first_item:
+                                    return first_item["text"]
+                                return str(first_item)
+                            return content if isinstance(content, str) else str(content)
+                        elif "text" in choice:
+                            return choice["text"]
+                    elif "content" in result:
+                        content = result["content"]
                         if isinstance(content, list) and len(content) > 0:
                             first_item = content[0]
                             if isinstance(first_item, dict) and "text" in first_item:
                                 return first_item["text"]
                             return str(first_item)
                         return content if isinstance(content, str) else str(content)
-                    elif "text" in choice:
-                        return choice["text"]
-                elif "content" in result:
-                    content = result["content"]
-                    if isinstance(content, list) and len(content) > 0:
-                        first_item = content[0]
-                        if isinstance(first_item, dict) and "text" in first_item:
-                            return first_item["text"]
-                        return str(first_item)
-                    return content if isinstance(content, str) else str(content)
-                elif "text" in result:
-                    return result["text"]
-                elif "error" in result:
-                    raise Exception(f"API 错误: {result['error']}")
+                    elif "text" in result:
+                        return result["text"]
+                    elif "error" in result:
+                        raise Exception(f"API 错误: {result['error']}")
 
-            return str(result)
+                return str(result)
 
-        except Exception as e:
-            logger.error(f"OpenAILLM 调用失败: {e}")
-            raise
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    logger.warning(f"请求失败 (尝试 {attempt + 1}/{max_retries}): {e}，重试中...")
+                    time.sleep(1 + random.random())
+                    continue
+                raise
+
+        # 所有重试都失败
+        if last_error:
+            logger.error(f"OpenAILLM 调用失败（已重试 {max_retries} 次）: {last_error}")
+            raise last_error
 
 
 def get_default_model_from_db():
