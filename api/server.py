@@ -4,6 +4,7 @@ FastAPI 服务
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 import sys
@@ -23,7 +24,22 @@ from config import QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY, QDRANT_COLLECTION_N
 import hashlib
 from datetime import datetime
 
+# 导入后台管理路由
+from admin.routes import router as admin_router
+
 app = FastAPI(title="RAG API", version="1.0.0")
+
+# CORS 配置
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 注册后台管理路由
+app.include_router(admin_router)
 
 # 静态文件目录
 STATIC_DIR = Path(__file__).parent.parent / "static"

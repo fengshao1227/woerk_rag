@@ -36,6 +36,13 @@ pandas>=2.1.0
 # MCP Server
 mcp[cli]>=1.0.0
 
+# 后台管理系统
+sqlalchemy>=2.0.0
+pymysql>=1.1.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.6
+
 # 代码解析（可选，如需要请手动安装兼容版本）
 # tree-sitter>=0.20.0
 # tree-sitter-languages>=1.7.0
