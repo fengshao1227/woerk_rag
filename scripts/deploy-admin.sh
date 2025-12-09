@@ -4,19 +4,15 @@
 
 set -e
 
-# 配置
-SERVER="ljf@34.180.100.55"
-REMOTE_DIR="~/rag"
-LOCAL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-ADMIN_FRONTEND_DIR="$LOCAL_DIR/admin_frontend"
-BRANCH="main"
+# 加载配置
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/config.sh"
 
-# 颜色输出
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+check_config
+
+# 本地路径
+LOCAL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ADMIN_FRONTEND_DIR="$LOCAL_DIR/admin_frontend"
 
 echo -e "${GREEN}========== Admin 后台部署 ==========${NC}"
 
@@ -58,7 +54,7 @@ fi
 
 # 4. 推送到 GitHub
 echo -e "${YELLOW}[3/6] 推送到 GitHub...${NC}"
-git push origin $BRANCH
+git push origin $GIT_BRANCH
 echo -e "${GREEN}✓ 已推送到 GitHub${NC}"
 
 # 5. 备份远程旧版本并上传新版本
@@ -86,7 +82,7 @@ echo -e "${GREEN}✓ 上传完成${NC}"
 # 6. 拉取代码并重启服务
 echo -e "${YELLOW}[6/6] 更新服务器并重启服务...${NC}"
 # 拉取代码
-ssh $SERVER "cd $REMOTE_DIR && git pull origin main"
+ssh $SERVER "cd $REMOTE_DIR && git pull origin $GIT_BRANCH"
 
 # 彻底停止旧服务
 echo "停止旧服务..."
@@ -115,7 +111,7 @@ sleep 18
 
 # 检查服务状态（最多重试 3 次）
 for i in 1 2 3; do
-    if curl -s --max-time 10 https://rag.litxczv.shop/health > /dev/null; then
+    if curl -s --max-time 10 $API_URL/health > /dev/null; then
         echo -e "${GREEN}✓ 服务启动成功${NC}"
         break
     else
@@ -135,7 +131,7 @@ echo -e "${GREEN}✓ 本地 dist 已清理${NC}"
 
 echo ""
 echo -e "${GREEN}========== 部署完成 ==========${NC}"
-echo -e "后台地址: ${BLUE}https://rag.litxczv.shop/admin${NC}"
+echo -e "后台地址: ${BLUE}${ADMIN_URL}${NC}"
 echo -e "账号: admin / admin123"
 echo ""
 echo -e "${YELLOW}远程备份位置: $REMOTE_DIR/admin_frontend/$BACKUP_NAME${NC}"

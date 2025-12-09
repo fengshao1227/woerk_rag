@@ -30,6 +30,12 @@ from datetime import datetime
 from admin.routes import router as admin_router
 from admin.auth import get_current_user
 from admin.models import LLMUsageLog, KnowledgeEntry, get_db_session
+from admin.database import SessionLocal
+
+# 导入 Agent 框架
+from agent import AgentConfig
+from agent.core import Agent
+from agent.tools import create_default_tool_registry, create_search_tool
 
 app = FastAPI(title="RAG API", version="1.0.0")
 
@@ -55,12 +61,30 @@ vector_store = None
 llm_client = None
 embedding_model = None
 qdrant_client = None
+agent_instance = None  # Agent 实例
+tool_registry = None   # 工具注册表
+
+
+class AsyncLLMWrapper:
+    """将同步 LLM 客户端包装为异步接口，供 Agent 使用"""
+
+    def __init__(self, llm_client):
+        self.llm = llm_client
+
+    async def chat(self, prompt: str) -> dict:
+        """异步 chat 方法"""
+        import asyncio
+        messages = [{"role": "user", "content": prompt}]
+        # 在线程池中运行同步方法
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, self.llm.invoke, messages)
+        return {"content": response, "usage": {}}
 
 
 @app.on_event("startup")
 async def startup_event():
     """启动时初始化"""
-    global qa_chain, vector_store, llm_client, embedding_model, qdrant_client
+    global qa_chain, vector_store, llm_client, embedding_model, qdrant_client, agent_instance, tool_registry
     try:
         qa_chain = QAChatChain()
         vector_store = VectorStore()
@@ -71,6 +95,16 @@ async def startup_event():
         protocol = "https" if QDRANT_USE_HTTPS else "http"
         url = f"{protocol}://{QDRANT_HOST}:{QDRANT_PORT}"
         qdrant_client = QdrantClient(url=url, api_key=QDRANT_API_KEY if QDRANT_API_KEY else None)
+
+        # 初始化 Agent 框架
+        try:
+            tool_registry = create_default_tool_registry(retriever=vector_store)
+            tool_registry.register(create_search_tool(vector_store))
+            async_llm = AsyncLLMWrapper(llm_client)
+            agent_instance = Agent(async_llm, tool_registry, AgentConfig(max_iterations=5, verbose=True))
+            logger.info("Agent 框架初始化成功")
+        except Exception as agent_err:
+            logger.warning(f"Agent 框架初始化失败（非致命）: {agent_err}")
 
         logger.info("RAG API 服务启动成功")
     except Exception as e:
@@ -253,6 +287,92 @@ async def clear_history(current_user: dict = Depends(get_current_user)):
         return {"message": "对话历史已清空"}
     except Exception as e:
         logger.error(f"清空历史失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class AgentRequest(BaseModel):
+    """Agent 请求"""
+    question: str
+    context: Optional[str] = None
+    max_iterations: int = 5
+
+
+class AgentResponse(BaseModel):
+    """Agent 响应"""
+    success: bool
+    answer: Optional[str] = None
+    thought_process: List[Dict] = []
+    iterations: int = 0
+    error: Optional[str] = None
+
+
+@app.post("/agent", response_model=AgentResponse)
+async def agent_query(request: AgentRequest, current_user: dict = Depends(get_current_user)):
+    """
+    Agent 智能问答接口（需要登录）
+
+    使用 ReAct 模式的 Agent 进行多步推理，可以调用工具完成复杂任务。
+    可用工具：
+    - search: 搜索知识库
+    - calculator: 数学计算
+    - code_executor: 执行 Python 代码
+    - datetime: 获取日期时间
+    - json: JSON 处理
+    """
+    if agent_instance is None:
+        raise HTTPException(status_code=503, detail="Agent 服务未初始化")
+
+    start_time = time.time()
+    try:
+        # 更新 Agent 配置
+        agent_instance.config.max_iterations = request.max_iterations
+
+        # 执行 Agent
+        result = await agent_instance.run(request.question, request.context)
+
+        # 构建思考过程
+        thought_process = []
+        for ta in result.thought_actions:
+            step = {"thought": ta.thought}
+            if ta.action:
+                step["action"] = ta.action
+                step["action_input"] = ta.action_input
+            if ta.observation:
+                step["observation"] = ta.observation[:500] if len(ta.observation) > 500 else ta.observation
+            thought_process.append(step)
+
+        # 记录审计日志
+        try:
+            request_time = time.time() - start_time
+            with SessionLocal() as db:
+                usage_log = LLMUsageLog(
+                    user_id=current_user.get("user_id"),
+                    request_type="agent",
+                    question=request.question[:500] if request.question else None,
+                    answer=result.answer[:1000] if result.answer else None,
+                    request_time=request_time,
+                    success=result.success,
+                    error_message=result.error[:500] if result.error else None,
+                    metadata=json.dumps({
+                        "iterations": result.iterations,
+                        "tools_used": [ta.action for ta in result.thought_actions if ta.action]
+                    }, ensure_ascii=False)
+                )
+                db.add(usage_log)
+                db.commit()
+        except Exception as log_err:
+            logger.warning(f"记录审计日志失败: {log_err}")
+
+        return AgentResponse(
+            success=result.success,
+            answer=result.answer,
+            thought_process=thought_process,
+            iterations=result.iterations,
+            error=result.error
+        )
+
+    except Exception as e:
+        logger.error(f"Agent 执行失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

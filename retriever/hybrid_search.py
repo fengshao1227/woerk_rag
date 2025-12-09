@@ -14,14 +14,26 @@ from utils.logger import logger
 
 
 class HybridSearch:
-    """混合检索器（支持 Reranker 重排 + Query 改写）"""
+    """混合检索器（支持 Reranker 重排 + Query 改写 + 高级关键词索引）"""
 
     def __init__(self):
         self.vector_store = VectorStore()
         self.db_path = BASE_DIR / "rag.db"
         self._reranker = None
         self._query_rewriter = None
+        self._keyword_index_manager = None  # 新增：高级关键词索引管理器
         self._init_keyword_index()
+
+    def _get_keyword_index_manager(self):
+        """懒加载关键词索引管理器"""
+        if self._keyword_index_manager is None:
+            try:
+                from retriever.keyword_index import KeywordIndexManager
+                self._keyword_index_manager = KeywordIndexManager()
+                logger.info("高级关键词索引管理器已加载")
+            except Exception as e:
+                logger.warning(f"关键词索引管理器加载失败: {e}")
+        return self._keyword_index_manager
 
     def _get_reranker(self):
         """懒加载 Reranker"""
@@ -71,7 +83,27 @@ class HybridSearch:
         logger.info("关键词索引数据库初始化完成")
 
     def _keyword_search(self, query: str, top_k: int = TOP_K) -> List[Dict]:
-        """关键词检索（使用 SQLite FTS5）"""
+        """关键词检索（优先使用高级索引管理器）"""
+        # 尝试使用高级关键词索引管理器
+        keyword_manager = self._get_keyword_index_manager()
+        if keyword_manager:
+            try:
+                results = keyword_manager.search(query, limit=top_k)
+                # 转换结果格式
+                converted_results = []
+                for r in results:
+                    converted_results.append({
+                        "id": r.get("doc_id") or r.get("qdrant_id"),
+                        "content": r.get("content", ""),
+                        "file_path": r.get("file_path", ""),
+                        "type": r.get("category", "general"),
+                        "score": abs(r.get("score", 0.0))  # BM25 分数转换
+                    })
+                return converted_results
+            except Exception as e:
+                logger.warning(f"高级关键词检索失败，回退到基础检索: {e}")
+
+        # 回退到基础关键词检索
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 

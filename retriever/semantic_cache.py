@@ -51,7 +51,7 @@ class SemanticCache:
 
     def __init__(
         self,
-        embedding_func,
+        embedding_func=None,
         similarity_threshold: float = 0.92,
         ttl_seconds: int = 86400 * 7,  # 默认 7 天
         max_cache_size: int = 10000,
@@ -61,13 +61,20 @@ class SemanticCache:
         初始化语义缓存
 
         Args:
-            embedding_func: 嵌入函数，接收文本返回向量
+            embedding_func: 嵌入函数，接收文本返回向量。若为 None 则自动创建
             similarity_threshold: 相似度阈值，超过此值视为命中
             ttl_seconds: 缓存过期时间（秒）
             max_cache_size: 最大缓存条目数
             cleanup_interval: 后台清理间隔（秒）
         """
-        self.embedding_func = embedding_func
+        # 如果没有提供 embedding_func，自动创建
+        if embedding_func is None:
+            from utils.embeddings import EmbeddingModel
+            embedding_model = EmbeddingModel()
+            self.embedding_func = lambda text: embedding_model.embed(text)
+        else:
+            self.embedding_func = embedding_func
+
         self.similarity_threshold = similarity_threshold
         self.ttl_seconds = ttl_seconds
         self.max_cache_size = max_cache_size
