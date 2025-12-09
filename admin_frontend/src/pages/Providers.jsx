@@ -85,12 +85,13 @@ export default function Providers() {
           添加供应商
         </Button>
       </div>
-      <Table columns={columns} dataSource={data} rowKey="id" loading={loading} />
+      <Table columns={columns} dataSource={data} rowKey="id" loading={loading} scroll={{ x: 800 }} />
       <Modal
         title={editingId ? '编辑供应商' : '添加供应商'}
         open={modalOpen}
         onCancel={() => { setModalOpen(false); setEditingId(null); }}
         footer={null}
+        width="min(520px, 95vw)"
       >
         <Form form={form} onFinish={handleSubmit} layout="vertical">
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>

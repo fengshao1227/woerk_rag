@@ -149,22 +149,24 @@ export default function Chat() {
   };
 
   return (
-    <div style={{ height: 'calc(100vh - 140px)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: 'calc(100vh - 110px)', display: 'flex', flexDirection: 'column' }}>
       {/* 消息区域 */}
       <Card
         title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span>知识库问答</span>
-            <Tooltip title="流式输出可实时显示生成内容">
-              <Switch
-                checkedChildren={<ThunderboltOutlined />}
-                unCheckedChildren="普通"
-                checked={streamMode}
-                onChange={setStreamMode}
-                size="small"
-              />
-            </Tooltip>
-            {streamMode && <Tag color="blue" style={{ marginLeft: 4 }}>流式模式</Tag>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Tooltip title="流式输出可实时显示生成内容">
+                <Switch
+                  checkedChildren={<ThunderboltOutlined />}
+                  unCheckedChildren="普通"
+                  checked={streamMode}
+                  onChange={setStreamMode}
+                  size="small"
+                />
+              </Tooltip>
+              {streamMode && <Tag color="blue" style={{ margin: 0 }}>流式模式</Tag>}
+            </div>
           </div>
         }
         extra={

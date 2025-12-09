@@ -15,17 +15,17 @@ export default function Dashboard() {
   return (
     <div>
       <h2>系统概览</h2>
-      <Row gutter={16}>
-        <Col span={6}>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={12} md={6}>
           <Card><Statistic title="知识条目" value={stats.total_knowledge} prefix={<BookOutlined />} /></Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={6}>
           <Card><Statistic title="LLM供应商" value={stats.total_providers} prefix={<ApiOutlined />} /></Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={6}>
           <Card><Statistic title="LLM模型" value={stats.total_models} prefix={<DatabaseOutlined />} /></Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={6}>
           <Card><Statistic title="激活模型" value={stats.active_models} prefix={<CheckCircleOutlined />} /></Card>
         </Col>
       </Row>

@@ -24,7 +24,16 @@ export default function Layout() {
 
   return (
     <AntLayout style={{ minHeight: '100vh' }}>
-      <Sider>
+      <Sider
+        breakpoint="lg"
+        collapsedWidth="0"
+        onBreakpoint={(broken) => {
+          console.log(broken);
+        }}
+        onCollapse={(collapsed, type) => {
+          console.log(collapsed, type);
+        }}
+      >
         <div style={{ color: '#fff', padding: '16px', fontSize: '18px', fontWeight: 'bold' }}>
           AI 知识库
         </div>
@@ -37,11 +46,11 @@ export default function Layout() {
         />
       </Sider>
       <AntLayout>
-        <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: '20px', fontWeight: 'bold' }}>知识库管理系统</div>
+        <Header style={{ background: '#fff', padding: '0 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: 'bold' }}>知识库管理系统</div>
           <LogoutOutlined onClick={handleLogout} style={{ fontSize: '18px', cursor: 'pointer' }} />
         </Header>
-        <Content style={{ margin: '24px', background: '#fff', padding: '24px' }}>
+        <Content style={{ margin: '16px', background: '#fff', padding: '16px', minHeight: 280, overflow: 'initial' }}>
           <Outlet />
         </Content>
       </AntLayout>

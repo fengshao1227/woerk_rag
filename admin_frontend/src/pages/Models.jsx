@@ -107,13 +107,13 @@ export default function Models() {
           添加模型
         </Button>
       </div>
-      <Table columns={columns} dataSource={data} rowKey="id" loading={loading} />
+      <Table columns={columns} dataSource={data} rowKey="id" loading={loading} scroll={{ x: 800 }} />
       <Modal
         title={editingId ? '编辑模型' : '添加模型'}
         open={modalOpen}
         onCancel={() => { setModalOpen(false); setEditingId(null); }}
         footer={null}
-        width={600}
+        width="min(600px, 95vw)"
       >
         <Form form={form} onFinish={handleSubmit} layout="vertical">
           <Form.Item name="provider_id" label="供应商" rules={[{ required: true }]}>

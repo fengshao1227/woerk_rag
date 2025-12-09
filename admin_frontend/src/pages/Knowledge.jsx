@@ -167,6 +167,7 @@ export default function Knowledge() {
         loading={loading}
         pagination={pagination}
         onChange={handleTableChange}
+        scroll={{ x: 800 }}
       />
       <Modal
         title="编辑知识条目"
@@ -199,7 +200,7 @@ export default function Knowledge() {
         open={detailModalOpen}
         onCancel={() => { setDetailModalOpen(false); setDetailData(null); }}
         footer={null}
-        width={800}
+        width="min(800px, 95vw)"
       >
         {detailLoading ? (
           <div style={{ textAlign: 'center', padding: '40px' }}>

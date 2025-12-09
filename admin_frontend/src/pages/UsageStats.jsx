@@ -121,8 +121,8 @@ export default function UsageStats() {
       </div>
 
       {/* 概览统计卡片 */}
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={6}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
               title="总请求数"
@@ -131,7 +131,7 @@ export default function UsageStats() {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
               title="成功率"
@@ -144,7 +144,7 @@ export default function UsageStats() {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
               title="总Token数"
@@ -153,7 +153,7 @@ export default function UsageStats() {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
               title="总费用"
@@ -165,8 +165,8 @@ export default function UsageStats() {
         </Col>
       </Row>
 
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={8}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} sm={12} md={8}>
           <Card>
             <Statistic
               title="平均响应时间"
@@ -177,7 +177,7 @@ export default function UsageStats() {
             />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Card>
             <Statistic
               title="成功请求"
@@ -187,7 +187,7 @@ export default function UsageStats() {
             />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Card>
             <Statistic
               title="失败请求"
@@ -202,9 +202,9 @@ export default function UsageStats() {
       {/* 按模型统计 */}
       {stats?.by_model && stats.by_model.length > 0 && (
         <Card title="按模型统计" style={{ marginBottom: 16 }}>
-          <Row gutter={16}>
+          <Row gutter={[16, 16]}>
             {stats.by_model.map((item, index) => (
-              <Col span={6} key={index}>
+              <Col xs={24} sm={12} md={6} key={index}>
                 <Card size="small">
                   <div style={{ fontWeight: 'bold', marginBottom: 8 }}>{item.name}</div>
                   <div>请求数: {item.count}</div>
@@ -220,9 +220,9 @@ export default function UsageStats() {
       {/* 按供应商统计 */}
       {stats?.by_provider && stats.by_provider.length > 0 && (
         <Card title="按供应商统计" style={{ marginBottom: 16 }}>
-          <Row gutter={16}>
+          <Row gutter={[16, 16]}>
             {stats.by_provider.map((item, index) => (
-              <Col span={6} key={index}>
+              <Col xs={24} sm={12} md={6} key={index}>
                 <Card size="small">
                   <div style={{ fontWeight: 'bold', marginBottom: 8 }}>{item.name}</div>
                   <div>请求数: {item.count}</div>
@@ -244,6 +244,7 @@ export default function UsageStats() {
           size="small"
           pagination={{ pageSize: 20 }}
           loading={loading}
+          scroll={{ x: 1000 }}
         />
       </Card>
     </div>
