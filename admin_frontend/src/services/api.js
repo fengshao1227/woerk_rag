@@ -152,5 +152,9 @@ export const cacheAPI = {
   clear: () => api.post('/cache/clear')
 };
 
+export const agentAPI = {
+  query: (question) => ragApi.post('/agent', { question }, { timeout: 120000 })
+};
+
 export { ragApi };
 export default api;

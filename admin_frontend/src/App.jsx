@@ -9,6 +9,7 @@ import Models from './pages/Models';
 import Knowledge from './pages/Knowledge';
 import UsageStats from './pages/UsageStats';
 import Chat from './pages/Chat';
+import Agent from './pages/Agent';
 import Evaluation from './pages/Evaluation';
 
 function PrivateRoute({ children }) {
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="knowledge" element={<Knowledge />} />
             <Route path="usage" element={<UsageStats />} />
             <Route path="chat" element={<Chat />} />
+            <Route path="agent" element={<Agent />} />
             <Route path="evaluation" element={<Evaluation />} />
           </Route>
         </Routes>
