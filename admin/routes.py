@@ -669,24 +669,24 @@ async def list_usage_logs(
     
     result = []
     for log in logs:
-        model = db.query(LLMModel).filter(LLMModel.id == log.model_id).first()
-        provider = db.query(LLMProvider).filter(LLMProvider.id == log.provider_id).first()
+        model = db.query(LLMModel).filter(LLMModel.id == log.model_id).first() if log.model_id else None
+        provider = db.query(LLMProvider).filter(LLMProvider.id == log.provider_id).first() if log.provider_id else None
         result.append(UsageLogResponse(
             id=log.id,
             model_id=log.model_id,
             model_name=model.display_name if model else "",
             provider_id=log.provider_id,
             provider_name=provider.name if provider else "",
-            prompt_tokens=log.prompt_tokens,
-            completion_tokens=log.completion_tokens,
-            total_tokens=log.total_tokens,
-            cost=float(log.cost),
-            request_time=float(log.request_time),
-            status=log.status,
+            prompt_tokens=log.prompt_tokens or 0,
+            completion_tokens=log.completion_tokens or 0,
+            total_tokens=log.total_tokens or 0,
+            cost=float(log.cost) if log.cost else 0,
+            request_time=float(log.request_time) if log.request_time else 0,
+            status=log.status or "success",
             error_message=log.error_message,
             created_at=log.created_at
         ))
-    
+
     return result
 
 

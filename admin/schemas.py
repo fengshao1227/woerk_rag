@@ -197,17 +197,17 @@ class StatsResponse(BaseModel):
 # ============================================================
 class UsageLogResponse(BaseModel):
     id: int
-    model_id: int
+    model_id: Optional[int] = None
     model_name: str = ""
-    provider_id: int
+    provider_id: Optional[int] = None
     provider_name: str = ""
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    cost: float
-    request_time: float
-    status: str
-    error_message: Optional[str]
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cost: float = 0
+    request_time: float = 0
+    status: str = "success"
+    error_message: Optional[str] = None
     created_at: datetime
 
     class Config:
