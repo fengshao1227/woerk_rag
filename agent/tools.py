@@ -376,20 +376,47 @@ def create_code_executor_tool() -> Tool:
 
 
 def create_web_search_tool() -> Tool:
-    """创建网络搜索工具（模拟）"""
+    """创建网络搜索工具（使用 DuckDuckGo）"""
 
-    def web_search(query: str) -> str:
-        """模拟网络搜索（实际项目中应接入搜索 API）"""
-        return f"网络搜索功能暂未实现。查询: {query}\n提示: 请使用知识库搜索工具 (search) 查找本地知识。"
+    async def web_search(query: str, max_results: int = 5) -> str:
+        """使用 DuckDuckGo 搜索互联网"""
+        try:
+            from duckduckgo_search import DDGS
+
+            results = []
+            with DDGS() as ddgs:
+                for r in ddgs.text(query, max_results=max_results):
+                    results.append({
+                        'title': r.get('title', ''),
+                        'body': r.get('body', ''),
+                        'href': r.get('href', '')
+                    })
+
+            if not results:
+                return f"未找到与 '{query}' 相关的搜索结果"
+
+            output = [f"搜索结果 ({len(results)} 条):\n"]
+            for i, r in enumerate(results, 1):
+                output.append(f"{i}. **{r['title']}**")
+                output.append(f"   {r['body'][:200]}...")
+                output.append(f"   链接: {r['href']}\n")
+
+            return "\n".join(output)
+
+        except ImportError:
+            return "错误: 未安装 duckduckgo-search 库。请运行: pip install duckduckgo-search"
+        except Exception as e:
+            return f"搜索失败: {type(e).__name__}: {e}"
 
     return Tool(
         name="web_search",
-        description="搜索互联网获取最新信息（当前为模拟实现）",
+        description="搜索互联网获取最新信息（使用 DuckDuckGo）",
         func=web_search,
         parameters=[
             ToolParameter(name="query", type="string", description="搜索查询"),
+            ToolParameter(name="max_results", type="number", description="最大结果数", required=False, default=5),
         ],
-        is_async=False
+        is_async=True
     )
 
 
