@@ -49,6 +49,7 @@ IGNORE_PATTERNS = os.getenv("IGNORE_PATTERNS", "node_modules/**,vendor/**,storag
 # ============================================================
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "cpu")
+EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))  # BGE-M3 默认维度
 
 # ============================================================
 # 检索配置
