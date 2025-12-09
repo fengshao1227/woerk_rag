@@ -115,7 +115,7 @@ Question: {question}
             desc = f"- {name}: {tool.description}"
             if tool.parameters:
                 params = ", ".join([
-                    f"{p['name']}({p['type']}): {p.get('description', '')}"
+                    f"{p.name}({p.type}): {p.description}"
                     for p in tool.parameters
                 ])
                 desc += f"\n  参数: {params}"
