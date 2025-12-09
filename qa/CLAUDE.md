@@ -174,11 +174,27 @@ conversation_history = [
 - 支持多轮对话
 - 避免重复回答
 
-### 历史长度限制
-当前未限制历史长度，建议后续添加：
-- 最大轮数限制（如 10 轮）
-- Token 总量限制
-- 自动摘要压缩
+### 历史长度限制与摘要压缩
+
+系统实现了自动对话摘要压缩功能：
+
+**触发条件**:
+- 对话轮数超过 `CONVERSATION_MAX_HISTORY_TURNS`（默认 10 轮）
+
+**压缩策略**:
+1. 保留最近 `CONVERSATION_KEEP_RECENT_TURNS` 轮（默认 4 轮）完整对话
+2. 早期对话自动调用 LLM 生成摘要
+3. 摘要作为系统上下文注入后续对话
+
+**配置项**:
+```bash
+CONVERSATION_SUMMARIZE_ENABLE=1      # 启用对话摘要
+CONVERSATION_MAX_HISTORY_TURNS=10    # 触发摘要的轮数阈值
+CONVERSATION_KEEP_RECENT_TURNS=4     # 保留的最近轮数
+CONVERSATION_MAX_SUMMARY_CHARS=1000  # 摘要最大字符数
+```
+
+**相关文件**: `qa/conversation_summarizer.py`
 
 ## 依赖关系
 
@@ -235,8 +251,8 @@ system_prompt = """你是一个专业的 AI 助手，基于提供的参考文档
 
 ## 后续改进
 
-- [ ] 添加流式响应支持（实时显示生成过程）
-- [ ] 实现对话历史摘要压缩
+- [x] 添加流式响应支持（实时显示生成过程）✅ 已完成
+- [x] 实现对话历史摘要压缩 ✅ 已完成
 - [ ] 添加引用来源的行号或片段高亮
 - [ ] 支持多模态输入（图片、文件）
 - [ ] 实现对话历史持久化（数据库）

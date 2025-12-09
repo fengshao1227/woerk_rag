@@ -228,11 +228,20 @@ class DocumentIndexer:
                 "doc_type": doc_type,
                 "chunk_index": chunk["chunk_index"],
             }
-            
+
+            # 添加标题信息
             if "heading" in chunk:
                 payload["heading"] = chunk["heading"]
             if "heading_level" in chunk:
                 payload["heading_level"] = chunk["heading_level"]
+
+            # 添加上下文信息（Contextual Chunking）
+            if "context_prefix" in chunk:
+                payload["context_prefix"] = chunk["context_prefix"]
+            if "heading_hierarchy" in chunk:
+                payload["heading_hierarchy"] = chunk["heading_hierarchy"]
+            if "file_title" in chunk:
+                payload["file_title"] = chunk["file_title"]
             
             points.append(
                 PointStruct(
@@ -251,11 +260,13 @@ class DocumentIndexer:
         # 同时写入关键词索引（用于混合检索）
         for i, chunk in enumerate(chunks):
             chunk_id = self._generate_id(str(file_path), chunk["chunk_index"])
+            # 使用包含上下文的内容用于关键词索引
             self.keyword_index.add_document(
                 doc_id=chunk_id,
                 content=chunk["content"],
+                title=chunk.get("context_prefix", ""),  # 用 context_prefix 作为 title
                 file_path=str(file_path),
-                doc_type=doc_type
+                category=doc_type
             )
 
         logger.info(f"索引文档: {file_path} ({len(chunks)} 块)")

@@ -240,7 +240,7 @@ def generate_report(
 
 ## 评估指标
 
-### 检索指标
+### 基础检索指标
 
 | 指标 | 说明 | 计算公式 | 目标值 |
 |------|------|----------|--------|
@@ -249,13 +249,30 @@ def generate_report(
 | `avg_score` | 平均相似度 | Σ(score) / 检索数量 | ≥ 0.7 |
 | `retrieved_count` | 检索文档数 | - | = top_k |
 
+### 高级检索指标（IR 标准指标）
+
+| 指标 | 说明 | 计算公式 | 目标值 |
+|------|------|----------|--------|
+| `mrr` | 平均倒数排名 | 1 / (第一个相关文档的排名) | ≥ 0.7 |
+| `map` | 平均精度均值 | Σ(P@k * rel(k)) / 相关文档数 | ≥ 0.6 |
+| `precision_at_k` | K 位精确率 | Top-K 中相关文档数 / K | ≥ 0.5 |
+| `recall_at_k` | K 位召回率 | Top-K 中相关文档数 / 总相关文档数 | ≥ 0.8 |
+| `ndcg_at_k` | 归一化折损累积增益 | DCG@K / IDCG@K | ≥ 0.7 |
+
+**指标详解**:
+- **MRR (Mean Reciprocal Rank)**: 衡量第一个相关结果的排名质量
+- **MAP (Mean Average Precision)**: 综合考虑所有相关结果的排名
+- **Precision@K**: 前 K 个结果中相关结果的比例
+- **Recall@K**: 前 K 个结果覆盖了多少相关文档
+- **NDCG@K**: 考虑排名位置的加权相关性得分
+
 ### 答案指标
 
 | 指标 | 说明 | 计算公式 | 目标值 |
 |------|------|----------|--------|
 | `keyword_coverage` | 答案关键词覆盖 | 答案中的关键词数 / 总期望关键词数 | ≥ 0.6 |
 | `is_refusal` | 是否拒答 | 包含拒答短语 | False（对有答案的问题） |
-| `answer_length` | 答案长度 | 字符数 | \u003e 50 |
+| `answer_length` | 答案长度 | 字符数 | > 50 |
 
 ### 综合指标
 
@@ -388,7 +405,7 @@ print(f"平均文件召回率: {sum(r['retrieval']['file_recall'] for r in resul
 
 ## 后续改进
 
-- [ ] 支持更多指标（MRR, NDCG, Precision@K）
+- [x] 支持更多指标（MRR, NDCG, Precision@K, Recall@K, MAP）✅ 已完成
 - [ ] 自动化测试集成（pytest）
 - [ ] 可视化评估结果（图表）
 - [ ] 支持人工标注和反馈

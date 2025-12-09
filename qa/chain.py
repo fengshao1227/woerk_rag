@@ -1,12 +1,13 @@
 """
 LangChain 问答链
 """
-from typing import List, Dict, Generator
+from typing import List, Dict, Generator, Optional
 
 from retriever.hybrid_search import HybridSearch
 from retriever.semantic_cache import SemanticCache
 from utils.llm import get_llm_client
 from utils.logger import logger
+from .conversation_summarizer import ConversationSummarizer
 
 # 上下文限制配置
 MAX_CONTEXT_CHARS = 8000  # 最大上下文字符数（约 4000 tokens）
@@ -16,10 +17,22 @@ MAX_SINGLE_CONTENT_CHARS = 2000  # 单条内容最大字符数
 class QAChatChain:
     """问答对话链"""
 
-    def __init__(self, enable_cache: bool = True):
+    def __init__(self, enable_cache: bool = True, enable_summarization: bool = True):
         self.llm = get_llm_client()
         self.retriever = HybridSearch()
         self.conversation_history = []
+
+        # 对话摘要相关
+        self.enable_summarization = enable_summarization
+        self.conversation_summary: Optional[str] = None  # 早期对话摘要
+        self.summarizer = None
+        if enable_summarization:
+            try:
+                self.summarizer = ConversationSummarizer(self.llm)
+                logger.info("对话摘要压缩已启用")
+            except Exception as e:
+                logger.warning(f"对话摘要初始化失败: {e}")
+                self.enable_summarization = False
 
         # 初始化语义缓存
         self.enable_cache = enable_cache
@@ -69,6 +82,58 @@ class QAChatChain:
             current_chars += len(entry)
 
         return "\n".join(context_parts)
+
+    def _maybe_compress_history(self) -> None:
+        """检查并在必要时压缩对话历史"""
+        if not self.enable_summarization or not self.summarizer:
+            return
+
+        if self.summarizer.should_summarize(self.conversation_history):
+            result = self.summarizer.compress_history(
+                self.conversation_history,
+                self.conversation_summary
+            )
+            if result["compressed"]:
+                self.conversation_summary = result["summary"]
+                self.conversation_history = result["recent_messages"]
+                logger.info(f"对话历史已压缩，摘要长度: {len(self.conversation_summary)} 字符")
+
+    def _build_messages_with_history(self, prompt: str, use_history: bool) -> List[Dict]:
+        """
+        构建包含历史对话的消息列表
+
+        Args:
+            prompt: 当前的提示词（包含上下文和问题）
+            use_history: 是否使用对话历史
+
+        Returns:
+            消息列表
+        """
+        messages = []
+
+        if use_history and self.conversation_history:
+            # 检查是否需要压缩
+            self._maybe_compress_history()
+
+            # 如果有摘要，添加到消息中
+            if self.enable_summarization and self.conversation_summary:
+                messages = self.summarizer.build_messages_with_summary(
+                    self.conversation_summary,
+                    self.conversation_history,
+                    prompt
+                )
+            else:
+                # 没有摘要时，使用最近的对话历史
+                for msg in self.conversation_history[-6:]:  # 保留最近 6 轮
+                    messages.append({
+                        "role": msg["role"],
+                        "content": msg["content"]
+                    })
+                messages.append({"role": "user", "content": prompt})
+        else:
+            messages.append({"role": "user", "content": prompt})
+
+        return messages
 
     def _build_prompt(self, question: str, context: str) -> str:
         """构建提示词"""
@@ -152,18 +217,9 @@ class QAChatChain:
 
         # 调用 LLM
         try:
-            messages = []
+            # 构建消息列表（包含对话摘要处理）
+            messages = self._build_messages_with_history(prompt, use_history)
 
-            # 添加历史对话（如果启用）
-            if use_history and self.conversation_history:
-                for msg in self.conversation_history[-6:]:  # 只保留最近6轮
-                    messages.append({
-                        "role": msg["role"],
-                        "content": msg["content"]
-                    })
-
-            # 添加当前问题
-            messages.append({"role": "user", "content": prompt})
 
             # 生成回答
             answer = self.llm.invoke(messages)
@@ -206,8 +262,31 @@ class QAChatChain:
             }
 
     def clear_history(self):
-        """清空对话历史"""
+        """清空对话历史和摘要"""
         self.conversation_history = []
+        self.conversation_summary = None
+        logger.info("对话历史和摘要已清空")
+
+    def get_conversation_stats(self) -> Dict:
+        """
+        获取对话状态统计
+
+        Returns:
+            包含对话历史统计信息的字典
+        """
+        history_turns = len(self.conversation_history) // 2
+        history_chars = sum(len(msg["content"]) for msg in self.conversation_history)
+        summary_chars = len(self.conversation_summary) if self.conversation_summary else 0
+
+        return {
+            "history_turns": history_turns,
+            "history_messages": len(self.conversation_history),
+            "history_chars": history_chars,
+            "has_summary": self.conversation_summary is not None,
+            "summary_chars": summary_chars,
+            "summarization_enabled": self.enable_summarization,
+            "cache_enabled": self.enable_cache
+        }
 
     def query_stream(
         self,
@@ -280,17 +359,8 @@ class QAChatChain:
 
         # 流式调用 LLM
         try:
-            messages = []
-
-            # 添加历史对话
-            if use_history and self.conversation_history:
-                for msg in self.conversation_history[-6:]:
-                    messages.append({
-                        "role": msg["role"],
-                        "content": msg["content"]
-                    })
-
-            messages.append({"role": "user", "content": prompt})
+            # 构建消息列表（包含对话摘要处理）
+            messages = self._build_messages_with_history(prompt, use_history)
 
             # 流式生成回答
             full_answer = ""

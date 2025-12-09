@@ -85,6 +85,21 @@ VECTOR_OPTIMIZE_PROFILE = os.getenv("VECTOR_OPTIMIZE_PROFILE", "balanced")  # de
 VECTOR_WARMUP_QUERIES = int(os.getenv("VECTOR_WARMUP_QUERIES", "50"))
 
 # ============================================================
+# Contextual Chunking 配置（上下文感知切分）
+# ============================================================
+CONTEXT_PREFIX_ENABLE = os.getenv("CONTEXT_PREFIX_ENABLE", "1").lower() in ("1", "true", "yes")
+CONTEXT_PREFIX_MAX_LEN = int(os.getenv("CONTEXT_PREFIX_MAX_LEN", "100"))  # 前缀最大长度
+CONTEXT_INJECT_TO_CONTENT = os.getenv("CONTEXT_INJECT_TO_CONTENT", "1").lower() in ("1", "true", "yes")  # 是否注入到内容
+
+# ============================================================
+# 对话摘要压缩配置
+# ============================================================
+CONVERSATION_SUMMARIZE_ENABLE = os.getenv("CONVERSATION_SUMMARIZE_ENABLE", "1").lower() in ("1", "true", "yes")
+CONVERSATION_MAX_HISTORY_TURNS = int(os.getenv("CONVERSATION_MAX_HISTORY_TURNS", "10"))  # 超过此轮数触发摘要
+CONVERSATION_KEEP_RECENT_TURNS = int(os.getenv("CONVERSATION_KEEP_RECENT_TURNS", "4"))  # 保留最近 N 轮完整对话
+CONVERSATION_MAX_SUMMARY_CHARS = int(os.getenv("CONVERSATION_MAX_SUMMARY_CHARS", "1000"))  # 摘要最大字符数
+
+# ============================================================
 # 日志配置
 # ============================================================
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

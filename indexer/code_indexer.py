@@ -125,7 +125,7 @@ class CodeIndexer:
         points = []
         for i, chunk in enumerate(chunks):
             chunk_id = self._generate_id(str(file_path), chunk["chunk_index"])
-            
+
             payload = {
                 "content": chunk["content"],
                 "file_path": str(file_path),
@@ -133,10 +133,21 @@ class CodeIndexer:
                 "language": language,
                 "chunk_index": chunk["chunk_index"],
             }
-            
+
+            # 添加符号信息
             if "symbol" in chunk:
                 payload["symbol"] = chunk["symbol"]
-            
+
+            # 添加上下文信息（Contextual Chunking）
+            if "context_prefix" in chunk:
+                payload["context_prefix"] = chunk["context_prefix"]
+            if "file_docstring" in chunk:
+                payload["file_docstring"] = chunk["file_docstring"]
+            if "class_context" in chunk:
+                payload["class_context"] = chunk["class_context"]
+            if "class_docstring" in chunk:
+                payload["class_docstring"] = chunk["class_docstring"]
+
             points.append(
                 PointStruct(
                     id=chunk_id,
@@ -155,15 +166,19 @@ class CodeIndexer:
         keyword_manager = KeywordIndexManager()
         for i, chunk in enumerate(chunks):
             chunk_id = self._generate_id(str(file_path), chunk["chunk_index"])
+            metadata = {
+                "file_path": str(file_path),
+                "type": "code",
+                "language": language,
+                "symbol": chunk.get("symbol", ""),
+            }
+            # 添加上下文信息到关键词索引
+            if "context_prefix" in chunk:
+                metadata["context_prefix"] = chunk["context_prefix"]
             keyword_manager.add_document(
                 doc_id=chunk_id,
                 content=chunk["content"],
-                metadata={
-                    "file_path": str(file_path),
-                    "type": "code",
-                    "language": language,
-                    "symbol": chunk.get("symbol", "")
-                }
+                metadata=metadata
             )
 
         logger.info(f"索引文件: {file_path} ({len(chunks)} 块)")
