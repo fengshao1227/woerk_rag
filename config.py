@@ -73,9 +73,16 @@ RERANKER_CACHE_TTL = int(os.getenv("RERANKER_CACHE_TTL", "300"))  # 缓存过期
 # ============================================================
 # Query 改写配置
 # ============================================================
-QUERY_REWRITE_ENABLE = os.getenv("QUERY_REWRITE_ENABLE", "0").lower() in ("1", "true", "yes")
+QUERY_REWRITE_ENABLE = os.getenv("QUERY_REWRITE_ENABLE", "1").lower() in ("1", "true", "yes")
 QUERY_REWRITE_STRATEGY = os.getenv("QUERY_REWRITE_STRATEGY", "multi_query")  # multi_query / hyde
 QUERY_REWRITE_NUM_VARIANTS = int(os.getenv("QUERY_REWRITE_NUM_VARIANTS", "3"))
+
+# ============================================================
+# 向量索引优化配置
+# ============================================================
+VECTOR_OPTIMIZE_ON_STARTUP = os.getenv("VECTOR_OPTIMIZE_ON_STARTUP", "1").lower() in ("1", "true", "yes")
+VECTOR_OPTIMIZE_PROFILE = os.getenv("VECTOR_OPTIMIZE_PROFILE", "balanced")  # default, high_recall, fast_search, balanced
+VECTOR_WARMUP_QUERIES = int(os.getenv("VECTOR_WARMUP_QUERIES", "50"))
 
 # ============================================================
 # 日志配置
