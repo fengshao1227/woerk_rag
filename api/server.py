@@ -32,10 +32,15 @@ from admin.auth import get_current_user
 from admin.models import LLMUsageLog, KnowledgeEntry
 from admin.database import SessionLocal
 
-# 导入 Agent 框架
-from agent import AgentConfig
-from agent.core import Agent
-from agent.tools import create_default_tool_registry, create_search_tool
+# 导入 Agent 框架（可选）
+AGENT_AVAILABLE = False
+try:
+    from agent import AgentConfig
+    from agent.core import Agent
+    from agent.tools import create_default_tool_registry, create_search_tool
+    AGENT_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Agent 模块导入失败，相关功能将不可用: {e}")
 
 app = FastAPI(title="RAG API", version="1.0.0")
 
@@ -96,15 +101,16 @@ async def startup_event():
         url = f"{protocol}://{QDRANT_HOST}:{QDRANT_PORT}"
         qdrant_client = QdrantClient(url=url, api_key=QDRANT_API_KEY if QDRANT_API_KEY else None)
 
-        # 初始化 Agent 框架
-        try:
-            tool_registry = create_default_tool_registry(retriever=vector_store)
-            tool_registry.register(create_search_tool(vector_store))
-            async_llm = AsyncLLMWrapper(llm_client)
-            agent_instance = Agent(async_llm, tool_registry, AgentConfig(max_iterations=5, verbose=True))
-            logger.info("Agent 框架初始化成功")
-        except Exception as agent_err:
-            logger.warning(f"Agent 框架初始化失败（非致命）: {agent_err}")
+        # 初始化 Agent 框架（如果可用）
+        if AGENT_AVAILABLE:
+            try:
+                tool_registry = create_default_tool_registry(retriever=vector_store)
+                tool_registry.register(create_search_tool(vector_store))
+                async_llm = AsyncLLMWrapper(llm_client)
+                agent_instance = Agent(async_llm, tool_registry, AgentConfig(max_iterations=5, verbose=True))
+                logger.info("Agent 框架初始化成功")
+            except Exception as agent_err:
+                logger.warning(f"Agent 框架初始化失败（非致命）: {agent_err}")
 
         logger.info("RAG API 服务启动成功")
     except Exception as e:
