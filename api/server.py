@@ -29,7 +29,8 @@ from datetime import datetime
 # 导入后台管理路由和认证
 from admin.routes import router as admin_router
 from admin.auth import get_current_user
-from admin.models import LLMUsageLog, KnowledgeEntry, get_db_session
+from admin.models import LLMUsageLog, KnowledgeEntry
+from utils.db_manager import get_db_session
 from admin.database import SessionLocal
 
 # 导入 Agent 框架
