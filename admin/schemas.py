@@ -239,3 +239,94 @@ class TestModelResponse(BaseModel):
     error: Optional[str] = None
     usage: dict
     request_time: float
+
+
+# ============================================================
+# 评估系统相关
+# ============================================================
+class TestCaseCreate(BaseModel):
+    """创建测试用例"""
+    question: str = Field(..., min_length=1)
+    expected_files: List[str] = Field(default_factory=list)
+    expected_keywords: List[str] = Field(default_factory=list)
+    category: str = Field(default="general")
+
+
+class TestCaseUpdate(BaseModel):
+    """更新测试用例"""
+    question: Optional[str] = None
+    expected_files: Optional[List[str]] = None
+    expected_keywords: Optional[List[str]] = None
+    category: Optional[str] = None
+
+
+class TestCaseResponse(BaseModel):
+    """测试用例响应"""
+    id: str
+    question: str
+    expected_files: List[str]
+    expected_keywords: List[str]
+    category: str
+
+
+class RetrievalMetrics(BaseModel):
+    """检索质量指标"""
+    file_recall: float
+    file_hits: List[dict]
+    keyword_coverage: float
+    keyword_hits: List[str]
+    retrieved_count: int
+    avg_score: float
+
+
+class AnswerMetrics(BaseModel):
+    """答案质量指标"""
+    keyword_coverage: float
+    keyword_hits: List[str]
+    is_refusal: bool
+    answer_length: int
+
+
+class EvalResultResponse(BaseModel):
+    """单个评估结果"""
+    test_case_id: str
+    question: str
+    category: str
+    answer: Optional[str] = None
+    sources: Optional[List[dict]] = None
+    retrieval_metrics: Optional[RetrievalMetrics] = None
+    answer_metrics: Optional[AnswerMetrics] = None
+    error: Optional[str] = None
+    timestamp: str
+
+
+class EvalSummaryResponse(BaseModel):
+    """评估汇总统计"""
+    total_cases: int
+    successful_cases: int
+    failed_cases: int
+    avg_file_recall: float
+    avg_keyword_coverage_retrieval: float
+    avg_keyword_coverage_answer: float
+    refusal_rate: float
+
+
+class EvalRunRequest(BaseModel):
+    """运行评估请求"""
+    test_case_ids: Optional[List[str]] = None  # 为空则运行所有
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+class EvalRunResponse(BaseModel):
+    """评估运行响应"""
+    summary: EvalSummaryResponse
+    results: List[EvalResultResponse]
+    timestamp: str
+
+
+class CacheStatsResponse(BaseModel):
+    """语义缓存统计"""
+    total_entries: int
+    hit_rate: float
+    avg_similarity: float
+    cache_size_mb: float

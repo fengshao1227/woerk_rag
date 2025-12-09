@@ -1,0 +1,73 @@
+[
+  {
+    "id": "tc001",
+    "question": "这个项目的主要功能是什么？",
+    "expected_files": [
+      "README.md",
+      "CLAUDE.md"
+    ],
+    "expected_keywords": [
+      "RAG",
+      "知识库",
+      "检索",
+      "问答"
+    ],
+    "category": "项目概述"
+  },
+  {
+    "id": "tc002",
+    "question": "如何配置嵌入模型？",
+    "expected_files": [
+      "utils/embeddings.py",
+      "config.py"
+    ],
+    "expected_keywords": [
+      "EMBEDDING_MODEL",
+      "BGE",
+      "sentence-transformers"
+    ],
+    "category": "配置说明"
+  },
+  {
+    "id": "tc003",
+    "question": "如何启用 Reranker 重排功能？",
+    "expected_files": [
+      "config.py",
+      "retriever/hybrid_search.py"
+    ],
+    "expected_keywords": [
+      "RERANKER_ENABLE",
+      "reranker",
+      "重排"
+    ],
+    "category": "配置说明"
+  },
+  {
+    "id": "tc004",
+    "question": "混合检索是如何工作的？",
+    "expected_files": [
+      "retriever/hybrid_search.py",
+      "retriever/vector_store.py"
+    ],
+    "expected_keywords": [
+      "HybridSearch",
+      "向量检索",
+      "关键词"
+    ],
+    "category": "技术实现"
+  },
+  {
+    "id": "tc005",
+    "question": "如何添加新的知识到系统中？",
+    "expected_files": [
+      "indexer/index_all.py",
+      "api/server.py"
+    ],
+    "expected_keywords": [
+      "索引",
+      "add_knowledge",
+      "向量"
+    ],
+    "category": "使用指南"
+  }
+]

@@ -138,5 +138,19 @@ export const chatAPI = {
   clearHistory: () => ragApi.post('/clear-history')
 };
 
+export const evalAPI = {
+  listTestCases: (category) => api.get('/eval/test-cases', { params: { category } }),
+  createTestCase: (data) => api.post('/eval/test-cases', data),
+  updateTestCase: (id, data) => api.put(`/eval/test-cases/${id}`, data),
+  deleteTestCase: (id) => api.delete(`/eval/test-cases/${id}`),
+  runEvaluation: (testCaseIds, topK = 5) => api.post('/eval/run', { test_case_ids: testCaseIds, top_k: topK }),
+  getStats: () => api.get('/eval/stats')
+};
+
+export const cacheAPI = {
+  getStats: () => api.get('/cache/stats'),
+  clear: () => api.post('/cache/clear')
+};
+
 export { ragApi };
 export default api;

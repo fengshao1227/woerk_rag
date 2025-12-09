@@ -15,7 +15,10 @@ from admin.schemas import (
     ModelCreate, ModelUpdate, ModelResponse,
     KnowledgeUpdate, KnowledgeResponse, KnowledgeListResponse, KnowledgeDetailResponse,
     MessageResponse, StatsResponse,
-    UsageLogResponse, UsageStatsResponse, TestModelRequest, TestModelResponse
+    UsageLogResponse, UsageStatsResponse, TestModelRequest, TestModelResponse,
+    TestCaseCreate, TestCaseUpdate, TestCaseResponse,
+    EvalRunRequest, EvalRunResponse, EvalSummaryResponse, EvalResultResponse,
+    RetrievalMetrics, AnswerMetrics, CacheStatsResponse
 )
 from admin.auth import (
     authenticate_user, create_access_token, get_current_user,
@@ -899,6 +902,362 @@ async def test_model(
 # ============================================================
 # 知识库批量导入
 # ============================================================
+
+
+# ============================================================
+# 评估系统 API
+# ============================================================
+@router.get("/eval/test-cases", response_model=List[TestCaseResponse])
+async def list_test_cases(
+    category: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """获取测试用例列表"""
+    import json
+    from pathlib import Path
+
+    test_cases_path = Path(__file__).parent.parent / "eval" / "test_cases.json"
+
+    if not test_cases_path.exists():
+        return []
+
+    with open(test_cases_path, 'r', encoding='utf-8') as f:
+        test_cases = json.load(f)
+
+    if category:
+        test_cases = [tc for tc in test_cases if tc.get("category") == category]
+
+    return [TestCaseResponse(**tc) for tc in test_cases]
+
+
+@router.post("/eval/test-cases", response_model=TestCaseResponse)
+async def create_test_case(
+    data: TestCaseCreate,
+    current_user: User = Depends(get_current_user)
+):
+    """创建测试用例"""
+    import json
+    import uuid
+    from pathlib import Path
+
+    test_cases_path = Path(__file__).parent.parent / "eval" / "test_cases.json"
+
+    # 读取现有测试用例
+    if test_cases_path.exists():
+        with open(test_cases_path, 'r', encoding='utf-8') as f:
+            test_cases = json.load(f)
+    else:
+        test_cases = []
+
+    # 生成新ID
+    new_id = f"tc{len(test_cases) + 1:03d}"
+
+    new_case = {
+        "id": new_id,
+        "question": data.question,
+        "expected_files": data.expected_files,
+        "expected_keywords": data.expected_keywords,
+        "category": data.category
+    }
+
+    test_cases.append(new_case)
+
+    # 保存
+    with open(test_cases_path, 'w', encoding='utf-8') as f:
+        json.dump(test_cases, f, ensure_ascii=False, indent=2)
+
+    return TestCaseResponse(**new_case)
+
+
+@router.put("/eval/test-cases/{test_case_id}", response_model=TestCaseResponse)
+async def update_test_case(
+    test_case_id: str,
+    data: TestCaseUpdate,
+    current_user: User = Depends(get_current_user)
+):
+    """更新测试用例"""
+    import json
+    from pathlib import Path
+
+    test_cases_path = Path(__file__).parent.parent / "eval" / "test_cases.json"
+
+    if not test_cases_path.exists():
+        raise HTTPException(status_code=404, detail="测试用例文件不存在")
+
+    with open(test_cases_path, 'r', encoding='utf-8') as f:
+        test_cases = json.load(f)
+
+    # 查找并更新
+    found = False
+    for tc in test_cases:
+        if tc.get("id") == test_case_id:
+            if data.question is not None:
+                tc["question"] = data.question
+            if data.expected_files is not None:
+                tc["expected_files"] = data.expected_files
+            if data.expected_keywords is not None:
+                tc["expected_keywords"] = data.expected_keywords
+            if data.category is not None:
+                tc["category"] = data.category
+            found = True
+
+            # 保存
+            with open(test_cases_path, 'w', encoding='utf-8') as f:
+                json.dump(test_cases, f, ensure_ascii=False, indent=2)
+
+            return TestCaseResponse(**tc)
+
+    if not found:
+        raise HTTPException(status_code=404, detail="测试用例不存在")
+
+
+@router.delete("/eval/test-cases/{test_case_id}", response_model=MessageResponse)
+async def delete_test_case(
+    test_case_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """删除测试用例"""
+    import json
+    from pathlib import Path
+
+    test_cases_path = Path(__file__).parent.parent / "eval" / "test_cases.json"
+
+    if not test_cases_path.exists():
+        raise HTTPException(status_code=404, detail="测试用例文件不存在")
+
+    with open(test_cases_path, 'r', encoding='utf-8') as f:
+        test_cases = json.load(f)
+
+    original_len = len(test_cases)
+    test_cases = [tc for tc in test_cases if tc.get("id") != test_case_id]
+
+    if len(test_cases) == original_len:
+        raise HTTPException(status_code=404, detail="测试用例不存在")
+
+    with open(test_cases_path, 'w', encoding='utf-8') as f:
+        json.dump(test_cases, f, ensure_ascii=False, indent=2)
+
+    return MessageResponse(message="测试用例已删除")
+
+
+@router.post("/eval/run", response_model=EvalRunResponse)
+async def run_evaluation(
+    request: EvalRunRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """运行评估"""
+    import json
+    from pathlib import Path
+    from datetime import datetime
+
+    # 加载测试用例
+    test_cases_path = Path(__file__).parent.parent / "eval" / "test_cases.json"
+
+    if not test_cases_path.exists():
+        raise HTTPException(status_code=404, detail="测试用例文件不存在")
+
+    with open(test_cases_path, 'r', encoding='utf-8') as f:
+        all_test_cases = json.load(f)
+
+    # 筛选测试用例
+    if request.test_case_ids:
+        test_cases = [tc for tc in all_test_cases if tc.get("id") in request.test_case_ids]
+    else:
+        test_cases = all_test_cases
+
+    if not test_cases:
+        raise HTTPException(status_code=400, detail="没有找到有效的测试用例")
+
+    # 初始化评估器组件
+    from qa.chain import QAChatChain
+    from retriever.vector_store import VectorStore
+
+    qa_chain = QAChatChain(enable_cache=False)  # 评估时禁用缓存
+    vector_store = VectorStore()
+
+    results = []
+
+    for test_case in test_cases:
+        try:
+            question = test_case["question"]
+
+            # 执行检索
+            retrieved_results = vector_store.search(question, top_k=request.top_k)
+
+            # 评估检索质量
+            expected_files = test_case.get("expected_files", [])
+            expected_keywords = test_case.get("expected_keywords", [])
+
+            retrieved_files = [r.get("file_path", "") for r in retrieved_results]
+            file_hits = []
+            for exp_file in expected_files:
+                matched = [f for f in retrieved_files if exp_file in f]
+                if matched:
+                    file_hits.append({"expected": exp_file, "matched": matched[0]})
+
+            file_recall = len(file_hits) / len(expected_files) if expected_files else 0
+
+            all_content = " ".join([r.get("content", "") for r in retrieved_results])
+            keyword_hits_retrieval = [kw for kw in expected_keywords if kw in all_content]
+            keyword_coverage_retrieval = len(keyword_hits_retrieval) / len(expected_keywords) if expected_keywords else 0
+
+            retrieval_metrics = RetrievalMetrics(
+                file_recall=file_recall,
+                file_hits=file_hits,
+                keyword_coverage=keyword_coverage_retrieval,
+                keyword_hits=keyword_hits_retrieval,
+                retrieved_count=len(retrieved_results),
+                avg_score=sum(r.get("score", 0) for r in retrieved_results) / len(retrieved_results) if retrieved_results else 0
+            )
+
+            # 执行问答
+            qa_result = qa_chain.query(question, use_history=False)
+            answer = qa_result["answer"]
+
+            # 评估答案质量
+            keyword_hits_answer = [kw for kw in expected_keywords if kw in answer]
+            keyword_coverage_answer = len(keyword_hits_answer) / len(expected_keywords) if expected_keywords else 0
+
+            refusal_phrases = ["无法找到", "没有找到", "不确定", "无法回答"]
+            is_refusal = any(phrase in answer for phrase in refusal_phrases)
+
+            answer_metrics = AnswerMetrics(
+                keyword_coverage=keyword_coverage_answer,
+                keyword_hits=keyword_hits_answer,
+                is_refusal=is_refusal,
+                answer_length=len(answer)
+            )
+
+            results.append(EvalResultResponse(
+                test_case_id=test_case["id"],
+                question=question,
+                category=test_case.get("category", "unknown"),
+                answer=answer,
+                sources=qa_result.get("sources", []),
+                retrieval_metrics=retrieval_metrics,
+                answer_metrics=answer_metrics,
+                timestamp=datetime.now().isoformat()
+            ))
+
+        except Exception as e:
+            results.append(EvalResultResponse(
+                test_case_id=test_case["id"],
+                question=test_case["question"],
+                category=test_case.get("category", "unknown"),
+                error=str(e),
+                timestamp=datetime.now().isoformat()
+            ))
+
+    # 计算汇总指标
+    valid_results = [r for r in results if r.error is None]
+
+    summary = EvalSummaryResponse(
+        total_cases=len(test_cases),
+        successful_cases=len(valid_results),
+        failed_cases=len(results) - len(valid_results),
+        avg_file_recall=sum(r.retrieval_metrics.file_recall for r in valid_results) / len(valid_results) if valid_results else 0,
+        avg_keyword_coverage_retrieval=sum(r.retrieval_metrics.keyword_coverage for r in valid_results) / len(valid_results) if valid_results else 0,
+        avg_keyword_coverage_answer=sum(r.answer_metrics.keyword_coverage for r in valid_results) / len(valid_results) if valid_results else 0,
+        refusal_rate=sum(1 for r in valid_results if r.answer_metrics.is_refusal) / len(valid_results) if valid_results else 0
+    )
+
+    return EvalRunResponse(
+        summary=summary,
+        results=results,
+        timestamp=datetime.now().isoformat()
+    )
+
+
+@router.get("/eval/stats", response_model=EvalSummaryResponse)
+async def get_eval_stats(
+    current_user: User = Depends(get_current_user)
+):
+    """获取评估统计（从最近的评估结果文件）"""
+    import json
+    from pathlib import Path
+    import glob
+
+    eval_dir = Path(__file__).parent.parent / "eval"
+    result_files = sorted(eval_dir.glob("eval_results_*.json"), reverse=True)
+
+    if not result_files:
+        return EvalSummaryResponse(
+            total_cases=0,
+            successful_cases=0,
+            failed_cases=0,
+            avg_file_recall=0,
+            avg_keyword_coverage_retrieval=0,
+            avg_keyword_coverage_answer=0,
+            refusal_rate=0
+        )
+
+    # 读取最新的结果文件
+    with open(result_files[0], 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    summary = data.get("summary", {})
+
+    return EvalSummaryResponse(
+        total_cases=summary.get("total_cases", 0),
+        successful_cases=summary.get("successful_cases", 0),
+        failed_cases=summary.get("failed_cases", 0),
+        avg_file_recall=summary.get("avg_file_recall", 0),
+        avg_keyword_coverage_retrieval=summary.get("avg_keyword_coverage_retrieval", 0),
+        avg_keyword_coverage_answer=summary.get("avg_keyword_coverage_answer", 0),
+        refusal_rate=summary.get("refusal_rate", 0)
+    )
+
+
+# ============================================================
+# 语义缓存统计 API
+# ============================================================
+@router.get("/cache/stats", response_model=CacheStatsResponse)
+async def get_cache_stats(
+    current_user: User = Depends(get_current_user)
+):
+    """获取语义缓存统计"""
+    try:
+        from retriever.semantic_cache import SemanticCache
+
+        cache = SemanticCache()
+        stats = cache.get_stats()
+
+        # 解析 hit_rate（可能是字符串格式如 "85.00%"）
+        hit_rate = stats.get("hit_rate", 0)
+        if isinstance(hit_rate, str):
+            hit_rate = float(hit_rate.rstrip('%')) / 100 if '%' in hit_rate else float(hit_rate)
+
+        return CacheStatsResponse(
+            total_entries=stats.get("cache_size", 0),
+            hit_rate=hit_rate,
+            avg_similarity=stats.get("similarity_threshold", 0.92),  # 使用阈值作为参考
+            cache_size_mb=0  # Qdrant 不直接提供大小，暂时返回 0
+        )
+    except Exception as e:
+        return CacheStatsResponse(
+            total_entries=0,
+            hit_rate=0,
+            avg_similarity=0,
+            cache_size_mb=0
+        )
+
+
+@router.post("/cache/clear", response_model=MessageResponse)
+async def clear_cache(
+    current_user: User = Depends(get_current_user)
+):
+    """清空语义缓存"""
+    try:
+        from retriever.semantic_cache import SemanticCache
+
+        cache = SemanticCache()
+        cache.clear()
+
+        return MessageResponse(message="缓存已清空")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"清空缓存失败: {str(e)}")
+
+
 @router.post("/knowledge/import", response_model=MessageResponse)
 async def import_knowledge(
     file: bytes = None,

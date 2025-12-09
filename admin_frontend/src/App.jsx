@@ -9,6 +9,7 @@ import Models from './pages/Models';
 import Knowledge from './pages/Knowledge';
 import UsageStats from './pages/UsageStats';
 import Chat from './pages/Chat';
+import Evaluation from './pages/Evaluation';
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="knowledge" element={<Knowledge />} />
             <Route path="usage" element={<UsageStats />} />
             <Route path="chat" element={<Chat />} />
+            <Route path="evaluation" element={<Evaluation />} />
           </Route>
         </Routes>
       </BrowserRouter>
