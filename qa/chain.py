@@ -4,6 +4,7 @@ LangChain 问答链
 from typing import List, Dict, Generator
 
 from retriever.hybrid_search import HybridSearch
+from retriever.semantic_cache import SemanticCache
 from utils.llm import get_llm_client
 from utils.logger import logger
 
@@ -15,10 +16,21 @@ MAX_SINGLE_CONTENT_CHARS = 2000  # 单条内容最大字符数
 class QAChatChain:
     """问答对话链"""
 
-    def __init__(self):
+    def __init__(self, enable_cache: bool = True):
         self.llm = get_llm_client()
         self.retriever = HybridSearch()
         self.conversation_history = []
+
+        # 初始化语义缓存
+        self.enable_cache = enable_cache
+        self.semantic_cache = None
+        if enable_cache:
+            try:
+                self.semantic_cache = SemanticCache()
+                logger.info("语义缓存已启用")
+            except Exception as e:
+                logger.warning(f"语义缓存初始化失败，将禁用缓存: {e}")
+                self.enable_cache = False
 
     def _truncate_content(self, content: str, max_chars: int = MAX_SINGLE_CONTENT_CHARS) -> str:
         """截断过长的内容"""
@@ -85,7 +97,8 @@ class QAChatChain:
         top_k: int = 5,
         filters: Dict = None,
         use_history: bool = True,
-        use_reranker: bool = None
+        use_reranker: bool = None,
+        use_cache: bool = True
     ) -> Dict:
         """
         执行问答
@@ -96,11 +109,25 @@ class QAChatChain:
             filters: 过滤条件
             use_history: 是否使用对话历史
             use_reranker: 是否使用 Reranker（None 时使用配置默认值）
+            use_cache: 是否使用语义缓存
 
         Returns:
             包含答案和检索结果的字典
         """
-        # 检索相关文档
+        # 1. 检查语义缓存
+        if use_cache and self.semantic_cache:
+            cached = self.semantic_cache.get(question)
+            if cached:
+                logger.info(f"语义缓存命中: {question[:50]}...")
+                return {
+                    "answer": cached["answer"],
+                    "sources": cached.get("sources", []),
+                    "retrieved_count": cached.get("retrieved_count", 0),
+                    "from_cache": True,
+                    "cache_similarity": cached.get("similarity", 0.0)
+                }
+
+        # 2. 检索相关文档
         logger.info(f"检索问题: {question}")
         results = self.retriever.search(
             question,
@@ -113,7 +140,8 @@ class QAChatChain:
             return {
                 "answer": "抱歉，我没有找到相关的信息。",
                 "sources": [],
-                "retrieved_count": 0
+                "retrieved_count": 0,
+                "from_cache": False
             }
 
         # 格式化上下文
@@ -145,25 +173,36 @@ class QAChatChain:
                 self.conversation_history.append({"role": "user", "content": question})
                 self.conversation_history.append({"role": "assistant", "content": answer})
 
-            return {
+            # 构建响应
+            sources = [
+                {
+                    "file_path": r.get("file_path", ""),
+                    "score": r.get("rerank_score", r.get("score", 0.0)),
+                    "preview": r.get("content", "")[:200] + "..."
+                }
+                for r in results
+            ]
+
+            response = {
                 "answer": answer,
-                "sources": [
-                    {
-                        "file_path": r.get("file_path", ""),
-                        "score": r.get("rerank_score", r.get("score", 0.0)),
-                        "preview": r.get("content", "")[:200] + "..."
-                    }
-                    for r in results
-                ],
-                "retrieved_count": len(results)
+                "sources": sources,
+                "retrieved_count": len(results),
+                "from_cache": False
             }
+
+            # 3. 存入语义缓存
+            if use_cache and self.semantic_cache:
+                self.semantic_cache.set(question, response)
+
+            return response
 
         except Exception as e:
             logger.error(f"LLM 调用失败: {e}")
             return {
                 "answer": f"生成回答时出错: {str(e)}",
                 "sources": [],
-                "retrieved_count": 0
+                "retrieved_count": 0,
+                "from_cache": False
             }
 
     def clear_history(self):
@@ -194,6 +233,19 @@ class QAChatChain:
             - {"type": "chunk", "data": "..."}    答案片段
             - {"type": "done", "data": "..."}     完整答案
         """
+        # 检查语义缓存
+        if self.semantic_cache:
+            cached = self.semantic_cache.get(question)
+            if cached:
+                logger.info(f"语义缓存命中: {question[:50]}...")
+                yield {"type": "sources", "data": cached.get("sources", [])}
+                # 模拟流式输出缓存的答案
+                answer = cached["answer"]
+                for i in range(0, len(answer), 20):
+                    yield {"type": "chunk", "data": answer[i:i+20]}
+                yield {"type": "done", "data": answer}
+                return
+
         # 检索相关文档
         logger.info(f"流式检索问题: {question}")
         results = self.retriever.search(
@@ -250,6 +302,13 @@ class QAChatChain:
             if use_history:
                 self.conversation_history.append({"role": "user", "content": question})
                 self.conversation_history.append({"role": "assistant", "content": full_answer})
+
+            # 存入语义缓存
+            if self.semantic_cache and full_answer:
+                try:
+                    self.semantic_cache.set(question, full_answer, sources)
+                except Exception as cache_err:
+                    logger.warning(f"语义缓存存储失败: {cache_err}")
 
             yield {"type": "done", "data": full_answer}
 

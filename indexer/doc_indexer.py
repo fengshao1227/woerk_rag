@@ -16,11 +16,12 @@ from config import (
 from utils.embeddings import EmbeddingModel
 from utils.logger import logger
 from .chunker import DocumentChunker
+from retriever.keyword_index import KeywordIndexManager
 
 
 class DocumentIndexer:
     """文档索引器"""
-    
+
     def __init__(self):
         self.embedding_model = EmbeddingModel()
         self.chunker = DocumentChunker()
@@ -33,6 +34,9 @@ class DocumentIndexer:
         )
         self.collection_name = QDRANT_COLLECTION_NAME
         self._ensure_collection()
+
+        # 初始化关键词索引管理器
+        self.keyword_index = KeywordIndexManager()
 
     def _ensure_collection(self):
         """确保集合存在"""
@@ -243,7 +247,17 @@ class DocumentIndexer:
             collection_name=self.collection_name,
             points=points
         )
-        
+
+        # 同时写入关键词索引（用于混合检索）
+        for i, chunk in enumerate(chunks):
+            chunk_id = self._generate_id(str(file_path), chunk["chunk_index"])
+            self.keyword_index.add_document(
+                doc_id=chunk_id,
+                content=chunk["content"],
+                file_path=str(file_path),
+                doc_type=doc_type
+            )
+
         logger.info(f"索引文档: {file_path} ({len(chunks)} 块)")
         return len(chunks)
     

@@ -49,3 +49,14 @@ python-multipart>=0.0.6
 # 代码解析（可选，如需要请手动安装兼容版本）
 # tree-sitter>=0.20.0
 # tree-sitter-languages>=1.7.0
+
+# 知识图谱
+networkx>=3.0
+
+# 多模态处理
+Pillow>=10.0.0
+pytesseract>=0.3.10
+
+# APM 性能监控（可选）
+# opentelemetry-api>=1.20.0
+# opentelemetry-sdk>=1.20.0

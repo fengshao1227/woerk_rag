@@ -15,6 +15,7 @@ from config import (
 from utils.embeddings import EmbeddingModel
 from utils.logger import logger
 from .chunker import CodeChunker
+from retriever.keyword_index import KeywordIndexManager
 
 
 class CodeIndexer:
@@ -149,7 +150,22 @@ class CodeIndexer:
             collection_name=self.collection_name,
             points=points
         )
-        
+
+        # 同时写入关键词索引（用于混合检索）
+        keyword_manager = KeywordIndexManager()
+        for i, chunk in enumerate(chunks):
+            chunk_id = self._generate_id(str(file_path), chunk["chunk_index"])
+            keyword_manager.add_document(
+                doc_id=chunk_id,
+                content=chunk["content"],
+                metadata={
+                    "file_path": str(file_path),
+                    "type": "code",
+                    "language": language,
+                    "symbol": chunk.get("symbol", "")
+                }
+            )
+
         logger.info(f"索引文件: {file_path} ({len(chunks)} 块)")
         return len(chunks)
     

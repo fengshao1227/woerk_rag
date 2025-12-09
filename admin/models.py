@@ -79,21 +79,49 @@ class KnowledgeEntry(Base):
 
 
 class LLMUsageLog(Base):
-    """LLM使用记录表"""
+    """LLM使用记录表 - 完整审计日志"""
     __tablename__ = "llm_usage_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    model_id = Column(Integer, ForeignKey("llm_models.id", ondelete="CASCADE"), nullable=False, index=True)
-    provider_id = Column(Integer, ForeignKey("llm_providers.id", ondelete="CASCADE"), nullable=False, index=True)
+    model_id = Column(Integer, ForeignKey("llm_models.id", ondelete="SET NULL"), nullable=True, index=True)
+    provider_id = Column(Integer, ForeignKey("llm_providers.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # 用户信息
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    username = Column(String(50), nullable=True)  # 冗余存储，防止用户删除后丢失
+
+    # 请求类型
+    request_type = Column(Enum('query', 'search', 'test', 'add_knowledge', 'other'), default='query', index=True)
+
+    # 请求内容（用于审计和调试）
+    question = Column(Text, nullable=True)  # 用户问题
+    answer_preview = Column(Text, nullable=True)  # 回答预览（前500字）
+
+    # Token 统计
     prompt_tokens = Column(Integer, default=0)
     completion_tokens = Column(Integer, default=0)
     total_tokens = Column(Integer, default=0)
     cost = Column(DECIMAL(10, 4), default=0)
-    request_time = Column(DECIMAL(10, 3), default=0)
+
+    # 性能指标
+    request_time = Column(DECIMAL(10, 3), default=0)  # LLM 请求耗时
+    total_time = Column(DECIMAL(10, 3), default=0)  # 总耗时（含检索）
+
+    # 检索信息
+    retrieval_count = Column(Integer, default=0)  # 检索到的文档数
+    rerank_used = Column(Boolean, default=False)  # 是否使用了重排
+
+    # 状态
     status = Column(Enum('success', 'error'), default='success')
     error_message = Column(Text, nullable=True)
+
+    # 客户端信息
+    client_ip = Column(String(50), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+
     created_at = Column(TIMESTAMP, server_default=func.now(), index=True)
 
     # 关联
     model = relationship("LLMModel")
     provider = relationship("LLMProvider")
+    user = relationship("User")

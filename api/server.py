@@ -1,7 +1,7 @@
 """
 FastAPI 服务
 """
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict
 import sys
 import json
+import time
 from pathlib import Path
 
 # 添加父目录到路径
@@ -28,6 +29,7 @@ from datetime import datetime
 # 导入后台管理路由和认证
 from admin.routes import router as admin_router
 from admin.auth import get_current_user
+from admin.models import LLMUsageLog, KnowledgeEntry, get_db_session
 
 app = FastAPI(title="RAG API", version="1.0.0")
 
@@ -116,6 +118,9 @@ class AddKnowledgeResponse(BaseModel):
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest, current_user: dict = Depends(get_current_user)):
     """问答接口（需要登录）"""
+    import time
+    start_time = time.time()
+
     try:
         result = qa_chain.query(
             question=request.question,
@@ -123,9 +128,45 @@ async def query(request: QueryRequest, current_user: dict = Depends(get_current_
             filters=request.filters,
             use_history=request.use_history
         )
+
+        # 记录审计日志
+        try:
+            response_time = time.time() - start_time
+            log_entry = LLMUsageLog(
+                user_id=current_user.get("user_id"),
+                request_type="query",
+                question=request.question[:500] if request.question else None,
+                answer=result.get("answer", "")[:1000] if result.get("answer") else None,
+                sources_count=result.get("retrieved_count", 0),
+                response_time=response_time,
+                status="success"
+            )
+            with SessionLocal() as db:
+                db.add(log_entry)
+                db.commit()
+        except Exception as log_error:
+            logger.warning(f"审计日志记录失败: {log_error}")
+
         return QueryResponse(**result)
     except Exception as e:
         logger.error(f"查询失败: {e}")
+        # 记录失败日志
+        try:
+            log_entry = LLMUsageLog(
+                user_id=current_user.get("user_id"),
+                request_type="query",
+                question=request.question[:500] if request.question else None,
+                status="error",
+                error_message=str(e)[:500]
+            )
+            db = SessionLocal()
+            try:
+                db.add(log_entry)
+                db.commit()
+            finally:
+                db.close()
+        except:
+            pass
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -159,6 +200,11 @@ async def query_stream(request: QueryRequest, current_user: dict = Depends(get_c
 @app.post("/search")
 async def search(request: SearchRequest, current_user: dict = Depends(get_current_user)):
     """向量检索接口（需要登录）"""
+    start_time = time.time()
+    success = False
+    error_msg = None
+    results = []
+
     try:
         results = vector_store.search(
             query=request.query,
@@ -166,10 +212,37 @@ async def search(request: SearchRequest, current_user: dict = Depends(get_curren
             filters=request.filters,
             score_threshold=request.score_threshold
         )
+        success = True
         return {"results": results, "count": len(results)}
     except Exception as e:
         logger.error(f"检索失败: {e}")
+        error_msg = str(e)[:500]
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # 记录审计日志
+        request_time = time.time() - start_time
+        try:
+            with SessionLocal() as db:
+                usage_log = LLMUsageLog(
+                    user_id=current_user.get("user_id"),
+                    request_type="search",
+                    question=request.query[:500] if request.query else None,
+                    model_id=None,
+                    input_tokens=0,
+                    output_tokens=0,
+                    request_time=request_time,
+                    success=success,
+                    error_message=error_msg,
+                    metadata=json.dumps({
+                        "top_k": request.top_k,
+                        "result_count": len(results),
+                        "filters": request.filters
+                    }, ensure_ascii=False) if success else None
+                )
+                db.add(usage_log)
+                db.commit()
+        except Exception as log_err:
+            logger.warning(f"记录审计日志失败: {log_err}")
 
 
 @app.post("/clear-history")
@@ -266,6 +339,36 @@ async def add_knowledge(request: AddKnowledgeRequest, current_user: dict = Depen
             points=[point]
         )
 
+        # 6. 同步写入 MySQL（双写 + 审计日志）
+        try:
+            with SessionLocal() as db:
+                # 写入知识条目
+                knowledge_entry = KnowledgeEntry(
+                    qdrant_id=content_hash,
+                    title=extracted_info.get('title', request.title),
+                    category=extracted_info.get('type', request.category) or 'general',
+                    summary=extracted_info.get('summary', ''),
+                    keywords=extracted_info.get('keywords', []),
+                    tech_stack=extracted_info.get('tech_stack', []),
+                    content_preview=request.content[:500] if request.content else None
+                )
+                db.add(knowledge_entry)
+
+                # 写入审计日志
+                audit_log = LLMUsageLog(
+                    user_id=current_user.get('user_id'),
+                    request_type='add_knowledge',
+                    question=f"添加知识: {extracted_info.get('title', '未命名')}",
+                    provider_name='system',
+                    model_name='embedding',
+                    success=True
+                )
+                db.add(audit_log)
+                db.commit()
+                logger.info(f"知识条目已同步到 MySQL: {content_hash}")
+        except Exception as mysql_err:
+            logger.warning(f"MySQL 写入失败（Qdrant 已写入）: {mysql_err}")
+
         logger.info(f"添加知识成功: {extracted_info.get('title', '未命名')}")
 
         return AddKnowledgeResponse(
@@ -276,6 +379,23 @@ async def add_knowledge(request: AddKnowledgeRequest, current_user: dict = Depen
 
     except Exception as e:
         logger.error(f"添加知识失败: {e}")
+        # 记录失败的审计日志
+        try:
+            db = SessionLocal()
+            audit_log = LLMUsageLog(
+                user_id=current_user.get('user_id') if current_user else None,
+                request_type='add_knowledge',
+                question=f"添加知识失败: {request.title or '未命名'}",
+                provider_name='system',
+                model_name='embedding',
+                success=False,
+                error_message=str(e)[:500]
+            )
+            db.add(audit_log)
+            db.commit()
+            db.close()
+        except:
+            pass
         raise HTTPException(status_code=500, detail=str(e))
 
 

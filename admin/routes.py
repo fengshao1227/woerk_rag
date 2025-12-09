@@ -570,19 +570,37 @@ async def delete_knowledge(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """删除知识条目"""
+    """删除知识条目（级联删除 MySQL + Qdrant）"""
     entry = db.query(KnowledgeEntry).filter(KnowledgeEntry.id == knowledge_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="知识条目不存在")
 
     qdrant_id = entry.qdrant_id
 
-    # 从 MySQL 删除
+    # 1. 从 Qdrant 删除向量
+    try:
+        from qdrant_client import QdrantClient
+        from config import QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY, COLLECTION_NAME
+
+        client = QdrantClient(
+            host=QDRANT_HOST,
+            port=QDRANT_PORT,
+            api_key=QDRANT_API_KEY if QDRANT_API_KEY else None
+        )
+
+        # 按 qdrant_id 删除
+        client.delete(
+            collection_name=COLLECTION_NAME,
+            points_selector={"points": [qdrant_id]}
+        )
+        logger.info(f"已从 Qdrant 删除向量: {qdrant_id}")
+    except Exception as e:
+        logger.error(f"从 Qdrant 删除向量失败: {e}")
+        # 继续删除 MySQL 记录，但记录错误
+
+    # 2. 从 MySQL 删除
     db.delete(entry)
     db.commit()
-
-    # TODO: 同时从 Qdrant 删除
-    # 这里需要调用 Qdrant 客户端删除对应的向量
 
     return MessageResponse(message="知识条目已删除")
 
