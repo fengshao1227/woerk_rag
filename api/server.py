@@ -3,11 +3,12 @@ FastAPI 服务
 """
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 import sys
+import json
 from pathlib import Path
 
 # 添加父目录到路径
@@ -126,6 +127,33 @@ async def query(request: QueryRequest, current_user: dict = Depends(get_current_
     except Exception as e:
         logger.error(f"查询失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/query/stream")
+async def query_stream(request: QueryRequest, current_user: dict = Depends(get_current_user)):
+    """流式问答接口 (SSE)（需要登录）"""
+    def generate():
+        try:
+            for event in qa_chain.query_stream(
+                question=request.question,
+                top_k=request.top_k,
+                filters=request.filters,
+                use_history=request.use_history
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error(f"流式查询失败: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'data': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # 禁用 Nginx 缓冲
+        }
+    )
 
 
 @app.post("/search")

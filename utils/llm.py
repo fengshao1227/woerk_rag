@@ -1,8 +1,9 @@
 """
 LLM 抽象层：支持 Anthropic 与 OpenAI 格式的第三方 API
 使用 curl_cffi 绕过 Cloudflare 保护
+支持流式输出 (SSE)
 """
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, AsyncGenerator, Generator
 from abc import ABC, abstractmethod
 import json
 
@@ -22,6 +23,19 @@ class BaseLLM(ABC):
 
         Returns:
             生成的回复文本
+        """
+        pass
+
+    @abstractmethod
+    def invoke_stream(self, messages: List[Dict[str, str]]) -> Generator[str, None, None]:
+        """
+        流式调用 LLM 生成回复
+
+        Args:
+            messages: 消息列表，格式为 [{"role": "user/assistant", "content": "..."}]
+
+        Yields:
+            生成的文本片段
         """
         pass
 
@@ -129,6 +143,91 @@ class AnthropicLLM(BaseLLM):
         # 所有重试都失败
         if last_error:
             logger.error(f"AnthropicLLM 调用失败（已重试 {max_retries} 次）: {last_error}")
+            raise last_error
+
+    def invoke_stream(self, messages: List[Dict[str, str]], max_retries: int = 3) -> Generator[str, None, None]:
+        """流式调用 Anthropic 格式 API"""
+        import time
+        import random
+
+        try:
+            from curl_cffi import requests as cffi_requests
+        except ImportError:
+            logger.warning("curl_cffi 未安装，使用标准 requests")
+            import requests as cffi_requests
+
+        url = f"{self.base_url.rstrip('/')}/v1/messages"
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/event-stream",
+        }
+        api_messages = [{"role": msg["role"], "content": msg["content"]} for msg in messages]
+        data = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+            "messages": api_messages,
+            "stream": True
+        }
+
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                fingerprints = ["chrome120", "chrome119", "chrome110", "edge101", "safari15_5"]
+                fingerprint = random.choice(fingerprints)
+
+                response = cffi_requests.post(
+                    url,
+                    headers=headers,
+                    json=data,
+                    timeout=120,
+                    impersonate=fingerprint,
+                    stream=True
+                )
+
+                if response.status_code != 200:
+                    response_text = response.text
+                    if "<!doctype html>" in response_text.lower() or "bunker" in response_text.lower():
+                        logger.warning(f"流式请求被 WAF 拦截 (尝试 {attempt + 1}/{max_retries})，重试...")
+                        last_error = Exception(f"API 被 WAF 拦截: {response.status_code}")
+                        time.sleep(1 + random.random())
+                        continue
+                    raise Exception(f"API 错误: {response.status_code} - {response_text}")
+
+                # 解析 SSE 流
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+                    line_str = line.decode('utf-8') if isinstance(line, bytes) else line
+                    if line_str.startswith('data: '):
+                        data_str = line_str[6:]
+                        if data_str == '[DONE]':
+                            break
+                        try:
+                            chunk_data = json.loads(data_str)
+                            # Anthropic 流式格式
+                            if chunk_data.get("type") == "content_block_delta":
+                                delta = chunk_data.get("delta", {})
+                                text = delta.get("text", "")
+                                if text:
+                                    yield text
+                        except json.JSONDecodeError:
+                            continue
+                return
+
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    logger.warning(f"流式请求失败 (尝试 {attempt + 1}/{max_retries}): {e}，重试中...")
+                    time.sleep(1 + random.random())
+                    continue
+                raise
+
+        if last_error:
+            logger.error(f"AnthropicLLM 流式调用失败（已重试 {max_retries} 次）: {last_error}")
             raise last_error
 
 
@@ -251,6 +350,94 @@ class OpenAILLM(BaseLLM):
         # 所有重试都失败
         if last_error:
             logger.error(f"OpenAILLM 调用失败（已重试 {max_retries} 次）: {last_error}")
+            raise last_error
+
+    def invoke_stream(self, messages: List[Dict[str, str]], max_retries: int = 3) -> Generator[str, None, None]:
+        """流式调用 OpenAI 格式 API"""
+        import time
+        import random
+
+        try:
+            from curl_cffi import requests as cffi_requests
+        except ImportError:
+            logger.warning("curl_cffi 未安装，使用标准 requests")
+            import requests as cffi_requests
+
+        base = self.base_url.rstrip('/')
+        if not base.endswith('/v1'):
+            base = f"{base}/v1"
+        url = f"{base}/chat/completions"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/event-stream",
+        }
+        data = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "stream": True
+        }
+
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                fingerprints = ["chrome120", "chrome119", "chrome110", "edge101", "safari15_5"]
+                fingerprint = random.choice(fingerprints)
+
+                response = cffi_requests.post(
+                    url,
+                    headers=headers,
+                    json=data,
+                    timeout=120,
+                    impersonate=fingerprint,
+                    stream=True
+                )
+
+                if response.status_code != 200:
+                    response_text = response.text
+                    if any(x in response_text.lower() for x in ["<!doctype html>", "bunker", "moderation", "blocked"]):
+                        logger.warning(f"流式请求被拦截 (尝试 {attempt + 1}/{max_retries})，重试...")
+                        last_error = Exception(f"API 被拦截: {response.status_code}")
+                        time.sleep(1 + random.random())
+                        continue
+                    raise Exception(f"API 错误: {response.status_code} - {response_text}")
+
+                # 解析 SSE 流
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+                    line_str = line.decode('utf-8') if isinstance(line, bytes) else line
+                    if line_str.startswith('data: '):
+                        data_str = line_str[6:]
+                        if data_str == '[DONE]':
+                            break
+                        try:
+                            chunk_data = json.loads(data_str)
+                            # OpenAI 流式格式
+                            choices = chunk_data.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                content = delta.get("content", "")
+                                if content:
+                                    yield content
+                        except json.JSONDecodeError:
+                            continue
+                return
+
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    logger.warning(f"流式请求失败 (尝试 {attempt + 1}/{max_retries}): {e}，重试中...")
+                    time.sleep(1 + random.random())
+                    continue
+                raise
+
+        if last_error:
+            logger.error(f"OpenAILLM 流式调用失败（已重试 {max_retries} 次）: {last_error}")
             raise last_error
 
 

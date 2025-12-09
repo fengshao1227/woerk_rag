@@ -1,7 +1,7 @@
 """
 LangChain 问答链
 """
-from typing import List, Dict
+from typing import List, Dict, Generator
 
 from retriever.hybrid_search import HybridSearch
 from utils.llm import get_llm_client
@@ -169,3 +169,92 @@ class QAChatChain:
     def clear_history(self):
         """清空对话历史"""
         self.conversation_history = []
+
+    def query_stream(
+        self,
+        question: str,
+        top_k: int = 5,
+        filters: Dict = None,
+        use_history: bool = True,
+        use_reranker: bool = None
+    ) -> Generator[Dict, None, None]:
+        """
+        流式执行问答
+
+        Args:
+            question: 问题
+            top_k: 检索结果数量
+            filters: 过滤条件
+            use_history: 是否使用对话历史
+            use_reranker: 是否使用 Reranker
+
+        Yields:
+            包含 type 和 data 的字典:
+            - {"type": "sources", "data": [...]}  检索结果
+            - {"type": "chunk", "data": "..."}    答案片段
+            - {"type": "done", "data": "..."}     完整答案
+        """
+        # 检索相关文档
+        logger.info(f"流式检索问题: {question}")
+        results = self.retriever.search(
+            question,
+            top_k=top_k,
+            filters=filters,
+            use_reranker=use_reranker
+        )
+
+        if not results:
+            yield {"type": "sources", "data": []}
+            yield {"type": "chunk", "data": "抱歉，我没有找到相关的信息。"}
+            yield {"type": "done", "data": "抱歉，我没有找到相关的信息。"}
+            return
+
+        # 先返回检索结果
+        sources = [
+            {
+                "file_path": r.get("file_path", ""),
+                "score": r.get("rerank_score", r.get("score", 0.0)),
+                "preview": r.get("content", "")[:200] + "..."
+            }
+            for r in results
+        ]
+        yield {"type": "sources", "data": sources}
+
+        # 格式化上下文
+        context = self._format_context(results)
+
+        # 构建提示词
+        prompt = self._build_prompt(question, context)
+
+        # 流式调用 LLM
+        try:
+            messages = []
+
+            # 添加历史对话
+            if use_history and self.conversation_history:
+                for msg in self.conversation_history[-6:]:
+                    messages.append({
+                        "role": msg["role"],
+                        "content": msg["content"]
+                    })
+
+            messages.append({"role": "user", "content": prompt})
+
+            # 流式生成回答
+            full_answer = ""
+            for chunk in self.llm.invoke_stream(messages):
+                full_answer += chunk
+                yield {"type": "chunk", "data": chunk}
+
+            # 保存对话历史
+            if use_history:
+                self.conversation_history.append({"role": "user", "content": question})
+                self.conversation_history.append({"role": "assistant", "content": full_answer})
+
+            yield {"type": "done", "data": full_answer}
+
+        except Exception as e:
+            logger.error(f"LLM 流式调用失败: {e}")
+            error_msg = f"生成回答时出错: {str(e)}"
+            yield {"type": "chunk", "data": error_msg}
+            yield {"type": "done", "data": error_msg}

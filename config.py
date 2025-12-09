@@ -70,6 +70,13 @@ RERANKER_CACHE_SIZE = int(os.getenv("RERANKER_CACHE_SIZE", "100"))  # 缓存条�
 RERANKER_CACHE_TTL = int(os.getenv("RERANKER_CACHE_TTL", "300"))  # 缓存过期时间（秒）
 
 # ============================================================
+# Query 改写配置
+# ============================================================
+QUERY_REWRITE_ENABLE = os.getenv("QUERY_REWRITE_ENABLE", "0").lower() in ("1", "true", "yes")
+QUERY_REWRITE_STRATEGY = os.getenv("QUERY_REWRITE_STRATEGY", "multi_query")  # multi_query / hyde
+QUERY_REWRITE_NUM_VARIANTS = int(os.getenv("QUERY_REWRITE_NUM_VARIANTS", "3"))
+
+# ============================================================
 # 日志配置
 # ============================================================
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

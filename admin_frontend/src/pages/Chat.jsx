@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Input, Button, Card, Spin, Empty, Tag, Collapse } from 'antd';
-import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined } from '@ant-design/icons';
+import { Input, Button, Card, Spin, Empty, Tag, Collapse, Switch, Tooltip } from 'antd';
+import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { chatAPI } from '../services/api';
 
 const { TextArea } = Input;
@@ -9,7 +9,9 @@ export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [streamMode, setStreamMode] = useState(true);
   const messagesEndRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -19,7 +21,80 @@ export default function Chat() {
     scrollToBottom();
   }, [messages]);
 
-  const handleSend = async () => {
+  const handleSendStream = async () => {
+    if (!input.trim() || loading) return;
+
+    const userMessage = { role: 'user', content: input };
+    setMessages(prev => [...prev, userMessage]);
+    const question = input;
+    setInput('');
+    setLoading(true);
+
+    // 创建一个空的 assistant 消息，稍后更新
+    const assistantMessageId = Date.now();
+    const initialAssistantMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      sources: [],
+      isStreaming: true
+    };
+    setMessages(prev => [...prev, initialAssistantMessage]);
+
+    try {
+      for await (const event of chatAPI.queryStream(question, 5, true)) {
+        if (event.type === 'sources') {
+          // 更新来源
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, sources: event.data }
+                : msg
+            )
+          );
+        } else if (event.type === 'chunk') {
+          // 追加内容
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: msg.content + event.data }
+                : msg
+            )
+          );
+        } else if (event.type === 'done') {
+          // 完成
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, isStreaming: false }
+                : msg
+            )
+          );
+        } else if (event.type === 'error') {
+          // 错误
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: '错误：' + event.data, isError: true, isStreaming: false }
+                : msg
+            )
+          );
+        }
+      }
+    } catch (error) {
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === assistantMessageId
+            ? { ...msg, content: '抱歉，发生了错误：' + error.message, isError: true, isStreaming: false }
+            : msg
+        )
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendNormal = async () => {
     if (!input.trim() || loading) return;
 
     const userMessage = { role: 'user', content: input };
@@ -49,6 +124,14 @@ export default function Chat() {
     }
   };
 
+  const handleSend = () => {
+    if (streamMode) {
+      handleSendStream();
+    } else {
+      handleSendNormal();
+    }
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -69,7 +152,21 @@ export default function Chat() {
     <div style={{ height: 'calc(100vh - 140px)', display: 'flex', flexDirection: 'column' }}>
       {/* 消息区域 */}
       <Card
-        title="知识库问答"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span>知识库问答</span>
+            <Tooltip title="流式输出可实时显示生成内容">
+              <Switch
+                checkedChildren={<ThunderboltOutlined />}
+                unCheckedChildren="普通"
+                checked={streamMode}
+                onChange={setStreamMode}
+                size="small"
+              />
+            </Tooltip>
+            {streamMode && <Tag color="blue" style={{ marginLeft: 4 }}>流式模式</Tag>}
+          </div>
+        }
         extra={
           <Button size="small" onClick={clearHistory} disabled={messages.length === 0}>
             清除对话
@@ -88,7 +185,7 @@ export default function Chat() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {messages.map((msg, index) => (
               <div
-                key={index}
+                key={msg.id || index}
                 style={{
                   display: 'flex',
                   justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
@@ -112,12 +209,19 @@ export default function Chat() {
                     <span style={{ fontWeight: 500 }}>
                       {msg.role === 'user' ? '你' : 'AI 助手'}
                     </span>
+                    {msg.isStreaming && (
+                      <Tag color="processing" style={{ marginLeft: 4 }}>
+                        <Spin size="small" style={{ marginRight: 4 }} />
+                        生成中...
+                      </Tag>
+                    )}
                   </div>
                   <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
                     {msg.content}
+                    {msg.isStreaming && <span className="cursor-blink">|</span>}
                   </div>
                   {/* 显示来源 */}
-                  {msg.sources && msg.sources.length > 0 && (
+                  {msg.sources && msg.sources.length > 0 && !msg.isStreaming && (
                     <Collapse
                       size="small"
                       style={{ marginTop: 12, background: 'rgba(0,0,0,0.02)' }}
@@ -142,13 +246,13 @@ export default function Chat() {
                                 }}
                               >
                                 <div style={{ fontWeight: 500, marginBottom: 4 }}>
-                                  {source.title || '未命名'}
+                                  {source.file_path || source.title || '未命名'}
                                   {source.category && (
                                     <Tag size="small" style={{ marginLeft: 8 }}>{source.category}</Tag>
                                   )}
                                 </div>
                                 <div style={{ color: '#666' }}>
-                                  {source.content?.substring(0, 200)}...
+                                  {source.preview || source.content?.substring(0, 200)}...
                                 </div>
                                 {source.score && (
                                   <div style={{ color: '#999', marginTop: 4 }}>
@@ -165,7 +269,7 @@ export default function Chat() {
                 </div>
               </div>
             ))}
-            {loading && (
+            {loading && !streamMode && (
               <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
                 <div style={{ padding: '12px 16px', background: '#f5f5f5', borderRadius: 12 }}>
                   <Spin size="small" /> 思考中...
@@ -198,6 +302,16 @@ export default function Chat() {
           发送
         </Button>
       </div>
+
+      <style>{`
+        .cursor-blink {
+          animation: blink 1s step-end infinite;
+        }
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 }

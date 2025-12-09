@@ -67,6 +67,9 @@ class DocumentIndexer:
             '.txt': 'text',
             '.html': 'html',
             '.htm': 'html',
+            '.pdf': 'pdf',
+            '.docx': 'docx',
+            '.doc': 'doc',
         }
         return type_map.get(ext, 'text')
     
@@ -101,28 +104,85 @@ class DocumentIndexer:
         except Exception as e:
             logger.error(f"读取文本文件失败: {file_path}, 错误: {e}")
             return ""
+
+    def _read_pdf(self, file_path: Path) -> str:
+        """读取 PDF 文件"""
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            logger.warning("pypdf 未安装，无法读取 PDF 文件。请运行: pip install pypdf")
+            return ""
+
+        try:
+            reader = PdfReader(str(file_path))
+            text_parts = []
+
+            for page_num, page in enumerate(reader.pages):
+                text = page.extract_text()
+                if text and text.strip():
+                    # 添加页码标记
+                    text_parts.append(f"[第 {page_num + 1} 页]\n{text}")
+
+            return "\n\n".join(text_parts)
+
+        except Exception as e:
+            logger.error(f"读取 PDF 文件失败: {file_path}, 错误: {e}")
+            return ""
+
+    def _read_docx(self, file_path: Path) -> str:
+        """读取 Word (docx) 文件"""
+        try:
+            from docx import Document
+        except ImportError:
+            logger.warning("python-docx 未安装，无法读取 Word 文件。请运行: pip install python-docx")
+            return ""
+
+        try:
+            doc = Document(str(file_path))
+            paragraphs = []
+
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    paragraphs.append(para.text)
+
+            # 也提取表格内容
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                    if row_text:
+                        paragraphs.append(row_text)
+
+            return "\n\n".join(paragraphs)
+
+        except Exception as e:
+            logger.error(f"读取 Word 文件失败: {file_path}, 错误: {e}")
+            return ""
     
     def _read_document(self, file_path: Path) -> str:
         """读取文档内容"""
         doc_type = self._get_doc_type(file_path)
-        
+
         if doc_type == 'markdown':
             return self._read_markdown(file_path)
         elif doc_type == 'html':
             return self._read_html(file_path)
+        elif doc_type == 'pdf':
+            return self._read_pdf(file_path)
+        elif doc_type in ('docx', 'doc'):
+            return self._read_docx(file_path)
         else:
             return self._read_text(file_path)
     
     def _find_doc_files(self, root_path: Path) -> List[Path]:
         """查找所有文档文件"""
         doc_files = []
-        patterns = ['*.md', '*.txt', '*.html', '*.htm']
-        
+        patterns = ['*.md', '*.txt', '*.html', '*.htm', '*.pdf', '*.docx', '*.doc']
+
         for pattern in patterns:
             for file_path in root_path.rglob(pattern):
                 if file_path.is_file() and not self._should_ignore(file_path):
                     doc_files.append(file_path)
-        
+
         return doc_files
     
     def _generate_id(self, file_path: str, chunk_index: int) -> str:

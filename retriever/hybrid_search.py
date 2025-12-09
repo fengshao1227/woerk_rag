@@ -1,22 +1,26 @@
 """
-混合检索（向量 + 关键词 + Reranker）
+混合检索（向量 + 关键词 + Reranker + Query改写）
 """
 from typing import List, Dict, Optional
 import sqlite3
 from pathlib import Path
 
 from retriever.vector_store import VectorStore
-from config import TOP_K, BASE_DIR, RERANKER_ENABLE, RERANKER_TOP_K_MULTIPLIER
+from config import (
+    TOP_K, BASE_DIR, RERANKER_ENABLE, RERANKER_TOP_K_MULTIPLIER,
+    QUERY_REWRITE_ENABLE, QUERY_REWRITE_STRATEGY, QUERY_REWRITE_NUM_VARIANTS
+)
 from utils.logger import logger
 
 
 class HybridSearch:
-    """混合检索器（支持 Reranker 重排）"""
+    """混合检索器（支持 Reranker 重排 + Query 改写）"""
 
     def __init__(self):
         self.vector_store = VectorStore()
         self.db_path = BASE_DIR / "rag.db"
         self._reranker = None
+        self._query_rewriter = None
         self._init_keyword_index()
 
     def _get_reranker(self):
@@ -25,6 +29,16 @@ class HybridSearch:
             from retriever.reranker import get_reranker
             self._reranker = get_reranker()
         return self._reranker
+
+    def _get_query_rewriter(self):
+        """懒加载 Query 改写器"""
+        if self._query_rewriter is None and QUERY_REWRITE_ENABLE:
+            from retriever.query_rewriter import get_query_rewriter
+            self._query_rewriter = get_query_rewriter(
+                strategy=QUERY_REWRITE_STRATEGY,
+                num_variants=QUERY_REWRITE_NUM_VARIANTS
+            )
+        return self._query_rewriter
 
     def _init_keyword_index(self):
         """初始化关键词索引数据库"""
@@ -106,9 +120,10 @@ class HybridSearch:
         vector_weight: float = 0.7,
         keyword_weight: float = 0.3,
         use_reranker: bool = None,
+        use_query_rewrite: bool = None,
     ) -> List[Dict]:
         """
-        混合检索（可选 Reranker 重排）
+        混合检索（可选 Reranker 重排 + Query 改写）
 
         Args:
             query: 查询文本
@@ -118,6 +133,7 @@ class HybridSearch:
             vector_weight: 向量检索权重
             keyword_weight: 关键词检索权重
             use_reranker: 是否使用 Reranker（None 时使用配置默认值）
+            use_query_rewrite: 是否使用 Query 改写（None 时使用配置默认值）
 
         Returns:
             检索结果列表
@@ -126,52 +142,82 @@ class HybridSearch:
         if use_reranker is None:
             use_reranker = RERANKER_ENABLE
 
+        # 确定是否使用 Query 改写
+        if use_query_rewrite is None:
+            use_query_rewrite = QUERY_REWRITE_ENABLE
+
+        # Query 改写
+        queries = [query]
+        if use_query_rewrite:
+            query_rewriter = self._get_query_rewriter()
+            if query_rewriter:
+                queries = query_rewriter.rewrite(query)
+                logger.info(f"Query 改写结果: {queries}")
+
         # 计算候选数量（Reranker 需要更多候选）
         candidate_k = top_k * RERANKER_TOP_K_MULTIPLIER if use_reranker else top_k
 
-        if not use_hybrid:
-            # 仅使用向量检索
-            results = self.vector_store.search(query, candidate_k, filters)
-        else:
-            # 向量检索
-            vector_results = self.vector_store.search(query, candidate_k, filters)
+        # 多查询检索
+        result_map = {}
 
-            # 关键词检索
-            keyword_results = self._keyword_search(query, candidate_k)
+        for q in queries:
+            if not use_hybrid:
+                # 仅使用向量检索
+                q_results = self.vector_store.search(q, candidate_k, filters)
+            else:
+                # 向量检索
+                vector_results = self.vector_store.search(q, candidate_k, filters)
 
-            # 合并结果
-            result_map = {}
+                # 关键词检索
+                keyword_results = self._keyword_search(q, candidate_k)
 
-            # 添加向量检索结果
-            for result in vector_results:
-                result_id = result.get("id") or result.get("file_path", "") + ":" + str(result.get("chunk_index", 0))
-                result_map[result_id] = {
-                    **result,
-                    "vector_score": result.get("score", 0.0) * vector_weight,
-                    "keyword_score": 0.0
-                }
+                # 合并当前查询的结果
+                q_results = []
 
-            # 添加关键词检索结果
-            for result in keyword_results:
-                result_id = result.get("id")
-                if result_id in result_map:
-                    result_map[result_id]["keyword_score"] = result.get("score", 0.0) * keyword_weight
-                else:
-                    result_map[result_id] = {
-                        **result,
-                        "vector_score": 0.0,
-                        "keyword_score": result.get("score", 0.0) * keyword_weight
-                    }
+                # 添加向量检索结果
+                for result in vector_results:
+                    result_id = result.get("id") or result.get("file_path", "") + ":" + str(result.get("chunk_index", 0))
+                    if result_id not in result_map:
+                        result_map[result_id] = {
+                            **result,
+                            "vector_score": result.get("score", 0.0) * vector_weight,
+                            "keyword_score": 0.0,
+                            "query_count": 1
+                        }
+                    else:
+                        result_map[result_id]["vector_score"] = max(
+                            result_map[result_id].get("vector_score", 0),
+                            result.get("score", 0.0) * vector_weight
+                        )
+                        result_map[result_id]["query_count"] = result_map[result_id].get("query_count", 0) + 1
 
-            # 计算综合分数并排序
-            results = []
-            for result_id, result in result_map.items():
-                combined_score = result.get("vector_score", 0.0) + result.get("keyword_score", 0.0)
-                result["score"] = combined_score
-                results.append(result)
+                # 添加关键词检索结果
+                for result in keyword_results:
+                    result_id = result.get("id")
+                    if result_id in result_map:
+                        result_map[result_id]["keyword_score"] = max(
+                            result_map[result_id].get("keyword_score", 0),
+                            result.get("score", 0.0) * keyword_weight
+                        )
+                    else:
+                        result_map[result_id] = {
+                            **result,
+                            "vector_score": 0.0,
+                            "keyword_score": result.get("score", 0.0) * keyword_weight,
+                            "query_count": 1
+                        }
 
-            # 按分数排序
-            results.sort(key=lambda x: x["score"], reverse=True)
+        # 计算综合分数并排序
+        results = []
+        for result_id, result in result_map.items():
+            # 多查询命中加分
+            query_boost = 1.0 + (result.get("query_count", 1) - 1) * 0.1
+            combined_score = (result.get("vector_score", 0.0) + result.get("keyword_score", 0.0)) * query_boost
+            result["score"] = combined_score
+            results.append(result)
+
+        # 按分数排序
+        results.sort(key=lambda x: x["score"], reverse=True)
 
         # Reranker 重排
         if use_reranker:

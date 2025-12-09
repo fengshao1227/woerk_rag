@@ -96,6 +96,45 @@ export const testAPI = {
 export const chatAPI = {
   query: (question, top_k = 5, use_history = true) =>
     ragApi.post('/query', { question, top_k, use_history }),
+  queryStream: async function* (question, top_k = 5, use_history = true) {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${RAG_API_BASE}/query/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ question, top_k, use_history })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            yield data;
+          } catch (e) {
+            // 忽略解析错误
+          }
+        }
+      }
+    }
+  },
   clearHistory: () => ragApi.post('/clear-history')
 };
 
