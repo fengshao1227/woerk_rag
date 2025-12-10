@@ -171,7 +171,7 @@ class KnowledgeVersion(Base):
     qdrant_id = Column(String(64), nullable=False, index=True)  # 关联 Qdrant 中的知识点
     version = Column(Integer, nullable=False, default=1)  # 版本号
     content = Column(Text, nullable=False)  # 完整内容快照
-    metadata = Column(JSON, nullable=True)  # 元数据快照
+    version_metadata = Column(JSON, nullable=True)  # 元数据快照 (避免与 Base.metadata 冲突)
     change_type = Column(Enum('create', 'update', 'delete'), default='create')  # 变更类型
     changed_by = Column(String(50), nullable=True)  # 操作人
     change_reason = Column(String(255), nullable=True)  # 变更原因

@@ -51,7 +51,7 @@ class VersionTracker:
                 qdrant_id=qdrant_id,
                 version=new_version,
                 content=content,
-                metadata=metadata,
+                version_metadata=metadata,
                 change_type=change_type,
                 changed_by=changed_by,
                 change_reason=change_reason
@@ -183,7 +183,7 @@ class VersionTracker:
                 qdrant_id=qdrant_id,
                 version=new_version,
                 content=target.content,
-                metadata=target.metadata,
+                version_metadata=target.version_metadata,
                 change_type="update",
                 changed_by=changed_by,
                 change_reason=reason or f"回滚到版本 {target_version}"
@@ -196,8 +196,8 @@ class VersionTracker:
                 KnowledgeEntry.qdrant_id == qdrant_id
             ).first()
 
-            if entry and target.metadata:
-                metadata = target.metadata if isinstance(target.metadata, dict) else {}
+            if entry and target.version_metadata:
+                metadata = target.version_metadata if isinstance(target.version_metadata, dict) else {}
                 entry.title = metadata.get("title", entry.title)
                 entry.category = metadata.get("category", entry.category)
                 entry.summary = metadata.get("summary", entry.summary)
@@ -261,7 +261,7 @@ class VersionTracker:
 
             # 简单的差异比较
             content_changed = v1.content != v2.content
-            metadata_changed = v1.metadata != v2.metadata
+            metadata_changed = v1.version_metadata != v2.version_metadata
 
             return {
                 "version1": {
