@@ -22,7 +22,8 @@ from admin.schemas import (
     KnowledgeGroupCreate, KnowledgeGroupUpdate, KnowledgeGroupResponse, KnowledgeGroupListResponse,
     GroupItemsRequest, GroupItemResponse,
     KnowledgeVersionResponse, KnowledgeVersionDetailResponse, KnowledgeVersionListResponse,
-    RollbackRequest, RollbackResponse
+    RollbackRequest, RollbackResponse,
+    RemoteModelItem, RemoteModelsResponse, BalanceResponse, BatchModelCreate, BatchModelResponse
 )
 from admin.auth import (
     authenticate_user, create_access_token, get_current_user,
@@ -277,6 +278,188 @@ async def delete_provider(
     db.delete(provider)
     db.commit()
     return MessageResponse(message="供应商已删除")
+
+
+@router.get("/providers/{provider_id}/remote-models", response_model=RemoteModelsResponse)
+async def get_remote_models(
+    provider_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取供应商的远程模型列表（仅支持 OpenAI 格式）"""
+    import httpx
+
+    provider = db.query(LLMProvider).filter(LLMProvider.id == provider_id).first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="供应商不存在")
+
+    if provider.api_format != "openai":
+        raise HTTPException(status_code=400, detail="仅支持 OpenAI 格式的供应商获取模型列表")
+
+    # 构建 API URL
+    base_url = provider.base_url.rstrip('/') if provider.base_url else "https://api.openai.com"
+    models_url = f"{base_url}/v1/models"
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                models_url,
+                headers={"Authorization": f"Bearer {provider.api_key}"}
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            # 解析模型列表
+            models = []
+            raw_models = data.get("data", [])
+            for m in raw_models:
+                models.append(RemoteModelItem(
+                    id=m.get("id", ""),
+                    object=m.get("object", "model"),
+                    created=m.get("created"),
+                    owned_by=m.get("owned_by")
+                ))
+
+            # 按模型ID排序
+            models.sort(key=lambda x: x.id)
+
+            return RemoteModelsResponse(
+                models=models,
+                total=len(models),
+                provider_id=provider.id,
+                provider_name=provider.name
+            )
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=f"获取模型列表失败: {e.response.text[:200]}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取模型列表失败: {str(e)}")
+
+
+@router.get("/providers/{provider_id}/balance", response_model=BalanceResponse)
+async def get_provider_balance(
+    provider_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取供应商余额（仅支持 OpenAI 格式，兼容多种中转服务）"""
+    import httpx
+
+    provider = db.query(LLMProvider).filter(LLMProvider.id == provider_id).first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="供应商不存在")
+
+    if provider.api_format != "openai":
+        return BalanceResponse(error="仅支持 OpenAI 格式的供应商查询余额")
+
+    base_url = provider.base_url.rstrip('/') if provider.base_url else "https://api.openai.com"
+    headers = {"Authorization": f"Bearer {provider.api_key}"}
+
+    # 尝试多种余额接口（兼容不同的中转服务）
+    balance_endpoints = [
+        "/v1/dashboard/billing/subscription",
+        "/dashboard/billing/subscription",
+        "/v1/dashboard/billing/credit_grants",
+        "/dashboard/billing/credit_grants",
+    ]
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for endpoint in balance_endpoints:
+            try:
+                url = f"{base_url}{endpoint}"
+                response = await client.get(url, headers=headers)
+                if response.status_code == 200:
+                    data = response.json()
+
+                    # 解析不同格式的响应
+                    balance = None
+                    used = None
+                    total = None
+                    expires_at = None
+
+                    # subscription 格式
+                    if "hard_limit_usd" in data:
+                        total = data.get("hard_limit_usd")
+                        used = data.get("soft_limit_usd", 0)
+                        balance = total - used if total else None
+                    # credit_grants 格式
+                    elif "total_granted" in data:
+                        total = data.get("total_granted")
+                        used = data.get("total_used")
+                        balance = data.get("total_available")
+                        grants = data.get("grants", {}).get("data", [])
+                        if grants:
+                            expires_at = grants[0].get("expires_at")
+                            if expires_at:
+                                from datetime import datetime
+                                expires_at = datetime.fromtimestamp(expires_at).isoformat()
+                    # 通用格式（一些中转服务）
+                    elif "balance" in data:
+                        balance = data.get("balance")
+                        used = data.get("used", data.get("usage"))
+                        total = data.get("total", data.get("limit"))
+
+                    return BalanceResponse(
+                        balance=balance,
+                        used=used,
+                        total=total,
+                        expires_at=expires_at,
+                        raw_response=data
+                    )
+            except Exception:
+                continue
+
+        # 所有端点都失败
+        return BalanceResponse(error="无法获取余额信息，该供应商可能不支持余额查询接口")
+
+
+@router.post("/providers/{provider_id}/models/batch", response_model=BatchModelResponse)
+async def batch_create_models(
+    provider_id: int,
+    data: BatchModelCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """批量创建模型"""
+    provider = db.query(LLMProvider).filter(LLMProvider.id == provider_id).first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="供应商不存在")
+
+    # 获取该供应商下已存在的模型ID
+    existing_model_ids = set(
+        m.model_id for m in db.query(LLMModel.model_id).filter(LLMModel.provider_id == provider_id).all()
+    )
+
+    created_count = 0
+    skipped_count = 0
+    skipped_models = []
+
+    for model_item in data.models:
+        if model_item.model_id in existing_model_ids:
+            skipped_count += 1
+            skipped_models.append(model_item.model_id)
+            continue
+
+        new_model = LLMModel(
+            provider_id=provider_id,
+            model_id=model_item.model_id,
+            display_name=model_item.display_name,
+            temperature=model_item.temperature,
+            max_tokens=model_item.max_tokens,
+            is_active=True,
+            is_default=False
+        )
+        db.add(new_model)
+        created_count += 1
+
+    db.commit()
+
+    return BatchModelResponse(
+        success=True,
+        created_count=created_count,
+        skipped_count=skipped_count,
+        skipped_models=skipped_models,
+        message=f"成功添加 {created_count} 个模型" + (f"，跳过 {skipped_count} 个已存在的模型" if skipped_count > 0 else "")
+    )
 
 
 # ============================================================

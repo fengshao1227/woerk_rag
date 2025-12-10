@@ -55,7 +55,11 @@ export const providerAPI = {
   create: data => api.post('/providers', data),
   get: id => api.get(`/providers/${id}`),
   update: (id, data) => api.put(`/providers/${id}`, data),
-  delete: id => api.delete(`/providers/${id}`)
+  delete: id => api.delete(`/providers/${id}`),
+  // 渠道管理新增
+  getRemoteModels: id => api.get(`/providers/${id}/remote-models`),
+  getBalance: id => api.get(`/providers/${id}/balance`),
+  batchCreateModels: (id, models) => api.post(`/providers/${id}/models/batch`, { models }),
 };
 
 export const modelAPI = {

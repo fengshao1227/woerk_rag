@@ -443,3 +443,55 @@ class RollbackResponse(BaseModel):
     new_version: int
     qdrant_id: str
 
+
+# ============================================================
+# 渠道管理相关（远程模型获取、余额查询、批量操作）
+# ============================================================
+class RemoteModelItem(BaseModel):
+    """远程模型项"""
+    id: str
+    object: str = "model"
+    created: Optional[int] = None
+    owned_by: Optional[str] = None
+
+
+class RemoteModelsResponse(BaseModel):
+    """远程模型列表响应"""
+    models: List[RemoteModelItem]
+    total: int
+    provider_id: int
+    provider_name: str
+
+
+class BalanceResponse(BaseModel):
+    """供应商余额响应"""
+    balance: Optional[float] = None  # 当前余额
+    used: Optional[float] = None     # 已使用
+    total: Optional[float] = None    # 总额度
+    currency: str = "USD"
+    expires_at: Optional[str] = None  # 过期时间
+    raw_response: Optional[dict] = None  # 原始响应（调试用）
+    error: Optional[str] = None  # 错误信息
+
+
+class BatchModelItem(BaseModel):
+    """批量创建模型项"""
+    model_id: str = Field(..., min_length=1)
+    display_name: str = Field(..., min_length=1)
+    temperature: float = Field(default=0.7, ge=0, le=2)
+    max_tokens: int = Field(default=4096, ge=1, le=200000)
+
+
+class BatchModelCreate(BaseModel):
+    """批量创建模型请求"""
+    models: List[BatchModelItem] = Field(..., min_length=1)
+
+
+class BatchModelResponse(BaseModel):
+    """批量创建模型响应"""
+    success: bool
+    created_count: int
+    skipped_count: int
+    skipped_models: List[str] = []  # 已存在被跳过的模型ID
+    message: str
+

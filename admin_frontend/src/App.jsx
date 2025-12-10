@@ -4,8 +4,7 @@ import zhCN from 'antd/locale/zh_CN';
 import Login from './pages/Login';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
-import Providers from './pages/Providers';
-import Models from './pages/Models';
+import Channels from './pages/Channels';
 import Knowledge from './pages/Knowledge';
 import Groups from './pages/Groups';
 import UsageStats from './pages/UsageStats';
@@ -26,8 +25,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<Dashboard />} />
-            <Route path="providers" element={<Providers />} />
-            <Route path="models" element={<Models />} />
+            <Route path="channels" element={<Channels />} />
             <Route path="knowledge" element={<Knowledge />} />
             <Route path="groups" element={<Groups />} />
             <Route path="usage" element={<UsageStats />} />
