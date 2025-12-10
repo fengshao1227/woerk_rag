@@ -161,7 +161,7 @@ class AddKnowledgeResponse(BaseModel):
 
 
 @app.post("/query", response_model=QueryResponse)
-async def query(request: QueryRequest, http_request: Request, current_user: dict = Depends(get_current_user)):
+async def query(request: QueryRequest, http_request: Request, current_user = Depends(get_current_user)):
     """问答接口（需要登录）"""
     import time
     start_time = time.time()
@@ -186,8 +186,8 @@ async def query(request: QueryRequest, http_request: Request, current_user: dict
             request_type=request_type,
             question=request.question,
             answer=answer_text,
-            user_id=current_user.get("user_id"),
-            username=current_user.get("username"),
+            user_id=current_user.id,
+            username=current_user.username,
             prompt_tokens=estimate_tokens(request.question),
             completion_tokens=estimate_tokens(answer_text),
             total_tokens=estimate_tokens(request.question) + estimate_tokens(answer_text),
@@ -206,8 +206,8 @@ async def query(request: QueryRequest, http_request: Request, current_user: dict
         log_llm_usage(
             request_type=request_type,
             question=request.question,
-            user_id=current_user.get("user_id"),
-            username=current_user.get("username"),
+            user_id=current_user.id,
+            username=current_user.username,
             total_time=total_time,
             status="error",
             error_message=str(e),
@@ -218,7 +218,7 @@ async def query(request: QueryRequest, http_request: Request, current_user: dict
 
 
 @app.post("/query/stream")
-async def query_stream(request: QueryRequest, current_user: dict = Depends(get_current_user)):
+async def query_stream(request: QueryRequest, current_user = Depends(get_current_user)):
     """流式问答接口 (SSE)（需要登录）"""
     start_time = time.time()
     collected_answer = []
@@ -245,8 +245,8 @@ async def query_stream(request: QueryRequest, current_user: dict = Depends(get_c
                 request_type="query_stream",
                 question=request.question,
                 answer=answer_text,
-                user_id=current_user.get("user_id"),
-                username=current_user.get("username"),
+                user_id=current_user.id,
+                username=current_user.username,
                 prompt_tokens=estimate_tokens(request.question),
                 completion_tokens=estimate_tokens(answer_text),
                 total_tokens=estimate_tokens(request.question) + estimate_tokens(answer_text),
@@ -260,8 +260,8 @@ async def query_stream(request: QueryRequest, current_user: dict = Depends(get_c
             log_llm_usage(
                 request_type="query_stream",
                 question=request.question,
-                user_id=current_user.get("user_id"),
-                username=current_user.get("username"),
+                user_id=current_user.id,
+                username=current_user.username,
                 total_time=total_time,
                 status="error",
                 error_message=str(e)
@@ -280,7 +280,7 @@ async def query_stream(request: QueryRequest, current_user: dict = Depends(get_c
 
 
 @app.post("/search")
-async def search(request: SearchRequest, http_request: Request, current_user: dict = Depends(get_current_user)):
+async def search(request: SearchRequest, http_request: Request, current_user = Depends(get_current_user)):
     """向量检索接口（需要登录）"""
     start_time = time.time()
     results = []
@@ -304,8 +304,8 @@ async def search(request: SearchRequest, http_request: Request, current_user: di
         log_llm_usage(
             request_type=request_type,
             question=request.query,
-            user_id=current_user.get("user_id"),
-            username=current_user.get("username"),
+            user_id=current_user.id,
+            username=current_user.username,
             total_time=total_time,
             retrieval_count=len(results),
             status="success",
@@ -321,8 +321,8 @@ async def search(request: SearchRequest, http_request: Request, current_user: di
         log_llm_usage(
             request_type=request_type,
             question=request.query,
-            user_id=current_user.get("user_id"),
-            username=current_user.get("username"),
+            user_id=current_user.id,
+            username=current_user.username,
             total_time=total_time,
             status="error",
             error_message=str(e),
@@ -333,7 +333,7 @@ async def search(request: SearchRequest, http_request: Request, current_user: di
 
 
 @app.post("/clear-history")
-async def clear_history(current_user: dict = Depends(get_current_user)):
+async def clear_history(current_user = Depends(get_current_user)):
     """清空对话历史（需要登录）"""
     try:
         qa_chain.clear_history()
@@ -360,7 +360,7 @@ class AgentResponse(BaseModel):
 
 
 @app.post("/agent", response_model=AgentResponse)
-async def agent_query(request: AgentRequest, current_user: dict = Depends(get_current_user)):
+async def agent_query(request: AgentRequest, current_user = Depends(get_current_user)):
     """
     Agent 智能问答接口（需要登录）
 
@@ -400,8 +400,8 @@ async def agent_query(request: AgentRequest, current_user: dict = Depends(get_cu
             request_type="agent",
             question=request.question,
             answer=result.answer,
-            user_id=current_user.get("user_id"),
-            username=current_user.get("username"),
+            user_id=current_user.id,
+            username=current_user.username,
             prompt_tokens=estimate_tokens(request.question),
             completion_tokens=estimate_tokens(result.answer or ""),
             total_tokens=estimate_tokens(request.question) + estimate_tokens(result.answer or ""),
@@ -424,7 +424,7 @@ async def agent_query(request: AgentRequest, current_user: dict = Depends(get_cu
 
 
 @app.post("/add_knowledge", response_model=AddKnowledgeResponse)
-async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, current_user: dict = Depends(get_current_user)):
+async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, current_user = Depends(get_current_user)):
     """添加知识到知识库（需要登录）"""
     # 检测是否来自 MCP 客户端
     is_mcp = http_request.headers.get("X-MCP-Client") == "true"
@@ -531,8 +531,8 @@ async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, cur
                     request_type=request_type,
                     question=f"添加知识: {extracted_info.get('title', '未命名')}",
                     answer=llm_response[:500] if llm_response else None,
-                    user_id=current_user.get('user_id'),
-                    username=current_user.get('username'),
+                    user_id=current_user.id,
+                    username=current_user.username,
                     prompt_tokens=estimate_tokens(extract_prompt),
                     completion_tokens=estimate_tokens(llm_response),
                     total_tokens=estimate_tokens(extract_prompt) + estimate_tokens(llm_response),
@@ -558,8 +558,8 @@ async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, cur
         log_llm_usage(
             request_type=request_type,
             question=f"添加知识失败: {request.title or '未命名'}",
-            user_id=current_user.get('user_id') if current_user else None,
-            username=current_user.get('username') if current_user else None,
+            user_id=current_user.id if current_user else None,
+            username=current_user.username if current_user else None,
             status="error",
             error_message=str(e),
             client_ip=http_request.client.host if http_request.client else None,
