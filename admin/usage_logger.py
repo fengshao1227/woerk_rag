@@ -60,7 +60,7 @@ def log_llm_usage(
     prompt_tokens: int = 0,
     completion_tokens: int = 0,
     total_tokens: int = 0,
-    cost: float = 0.0,
+    cost: float = None,  # None 表示自动计算
     request_time: float = 0.0,
     total_time: float = 0.0,
     retrieval_count: int = 0,
@@ -113,6 +113,16 @@ def log_llm_usage(
         truncated_question = question[:500] if question else None
         truncated_answer = answer[:1000] if answer else None
         truncated_error = error_message[:1000] if error_message else None
+
+        # 自动计算费用（如果未提供）
+        if cost is None:
+            # 获取模型信息用于精确计费
+            model_name = None
+            if model_id:
+                model = db.query(LLMModel).filter(LLMModel.id == model_id).first()
+                if model:
+                    model_name = model.model_id
+            cost = calculate_cost(prompt_tokens, completion_tokens, model_name)
 
         # 创建日志记录
         log_entry = LLMUsageLog(
@@ -173,9 +183,54 @@ def estimate_tokens(text: str) -> int:
 
 def estimate_cost(total_tokens: int, model_name: str = None) -> float:
     """
-    估算调用成本（简化版）
-
-    实际应该根据不同模型有不同定价
-    这里简单按 $0.01/1k tokens 估算
+    估算调用成本（简化版，已废弃，请使用 calculate_cost）
     """
-    return total_tokens * 0.00001
+    return calculate_cost(0, total_tokens, model_name)
+
+
+# 模型定价表（每百万 token 的美元价格）
+MODEL_PRICING = {
+    # Claude 模型
+    "claude-3-5-haiku": {"input": 0.25, "output": 1.25},
+    "claude-3-haiku": {"input": 0.25, "output": 1.25},
+    "claude-3-5-sonnet": {"input": 3.0, "output": 15.0},
+    "claude-3-sonnet": {"input": 3.0, "output": 15.0},
+    "claude-3-opus": {"input": 15.0, "output": 75.0},
+    # OpenAI 模型
+    "gpt-4o": {"input": 2.5, "output": 10.0},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.6},
+    "gpt-4-turbo": {"input": 10.0, "output": 30.0},
+    "gpt-4": {"input": 30.0, "output": 60.0},
+    "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
+    # 默认定价（用于未知模型）
+    "default": {"input": 1.0, "output": 3.0},
+}
+
+
+def calculate_cost(prompt_tokens: int, completion_tokens: int, model_name: str = None) -> float:
+    """
+    根据模型计算调用成本
+
+    Args:
+        prompt_tokens: 输入 token 数
+        completion_tokens: 输出 token 数
+        model_name: 模型名称（如 claude-3-5-haiku-20241022）
+
+    Returns:
+        成本（美元）
+    """
+    # 查找匹配的定价
+    pricing = MODEL_PRICING.get("default")
+
+    if model_name:
+        model_lower = model_name.lower()
+        for key in MODEL_PRICING:
+            if key in model_lower:
+                pricing = MODEL_PRICING[key]
+                break
+
+    # 计算费用（价格是每百万 token）
+    input_cost = (prompt_tokens / 1_000_000) * pricing["input"]
+    output_cost = (completion_tokens / 1_000_000) * pricing["output"]
+
+    return round(input_cost + output_cost, 6)
