@@ -131,11 +131,23 @@ async def list_providers(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取供应商列表"""
-    providers = db.query(LLMProvider).order_by(LLMProvider.id.desc()).all()
+    """获取供应商列表（使用子查询优化，避免 N+1 查询）"""
+    # 子查询：统计每个供应商的模型数量
+    models_count_subq = db.query(
+        LLMModel.provider_id,
+        func.count(LLMModel.id).label('models_count')
+    ).group_by(LLMModel.provider_id).subquery()
+
+    # 使用 LEFT JOIN 一次性获取所有数据
+    rows = db.query(
+        LLMProvider,
+        func.coalesce(models_count_subq.c.models_count, 0).label('models_count')
+    ).outerjoin(
+        models_count_subq, LLMProvider.id == models_count_subq.c.provider_id
+    ).order_by(LLMProvider.id.desc()).all()
+
     result = []
-    for p in providers:
-        models_count = db.query(func.count(LLMModel.id)).filter(LLMModel.provider_id == p.id).scalar() or 0
+    for p, models_count in rows:
         result.append(ProviderResponse(
             id=p.id,
             name=p.name,
@@ -471,19 +483,26 @@ async def list_models(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取模型列表"""
-    query = db.query(LLMModel)
+    """获取模型列表（使用 JOIN 优化，避免 N+1 查询）"""
+    # 使用 LEFT JOIN 一次性获取模型和供应商名称
+    query = db.query(
+        LLMModel,
+        LLMProvider.name.label('provider_name')
+    ).outerjoin(
+        LLMProvider, LLMModel.provider_id == LLMProvider.id
+    )
+
     if provider_id:
         query = query.filter(LLMModel.provider_id == provider_id)
 
-    models = query.order_by(LLMModel.id.desc()).all()
+    rows = query.order_by(LLMModel.id.desc()).all()
+
     result = []
-    for m in models:
-        provider = db.query(LLMProvider).filter(LLMProvider.id == m.provider_id).first()
+    for m, provider_name in rows:
         result.append(ModelResponse(
             id=m.id,
             provider_id=m.provider_id,
-            provider_name=provider.name if provider else "",
+            provider_name=provider_name or "",
             model_id=m.model_id,
             display_name=m.display_name,
             temperature=float(m.temperature),
@@ -1742,22 +1761,28 @@ async def list_group_items(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取分组内的知识条目"""
+    """获取分组内的知识条目（使用 JOIN 优化，避免 N+1 查询）"""
     group = db.query(KnowledgeGroup).filter(KnowledgeGroup.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="分组不存在")
 
-    items = db.query(KnowledgeGroupItem).filter(KnowledgeGroupItem.group_id == group_id).all()
+    # 使用 LEFT JOIN 一次性获取分组项和知识条目标题
+    rows = db.query(
+        KnowledgeGroupItem,
+        KnowledgeEntry.title.label('entry_title')
+    ).outerjoin(
+        KnowledgeEntry, KnowledgeGroupItem.qdrant_id == KnowledgeEntry.qdrant_id
+    ).filter(
+        KnowledgeGroupItem.group_id == group_id
+    ).all()
 
     result = []
-    for item in items:
-        # 获取知识条目标题
-        entry = db.query(KnowledgeEntry).filter(KnowledgeEntry.qdrant_id == item.qdrant_id).first()
+    for item, entry_title in rows:
         result.append(GroupItemResponse(
             id=item.id,
             group_id=item.group_id,
             qdrant_id=item.qdrant_id,
-            title=entry.title if entry else None,
+            title=entry_title,
             created_at=item.created_at
         ))
 
