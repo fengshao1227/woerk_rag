@@ -225,7 +225,8 @@ class QAChatChain:
 
 
             # 生成回答
-            answer = self.llm.invoke(messages)
+            llm_response = self.llm.invoke(messages)
+            answer = llm_response.content
 
             # 保存对话历史
             if use_history:
@@ -261,7 +262,12 @@ class QAChatChain:
                 "sources": sources,
                 "retrieved_count": len(results),
                 "from_cache": False,
-                "highlights": highlights
+                "highlights": highlights,
+                "usage": {
+                    "input_tokens": llm_response.input_tokens,
+                    "output_tokens": llm_response.output_tokens,
+                    "total_tokens": llm_response.total_tokens
+                }
             }
 
             # 3. 存入语义缓存

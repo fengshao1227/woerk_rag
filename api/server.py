@@ -135,6 +135,7 @@ class QueryResponse(BaseModel):
     retrieved_count: int
     from_cache: Optional[bool] = False
     highlights: Optional[Dict] = None  # 引用高亮信息
+    usage: Optional[Dict] = None  # token 使用情况
 
 
 class SearchRequest(BaseModel):
@@ -179,18 +180,19 @@ async def query(request: QueryRequest, http_request: Request, current_user = Dep
             use_history=request.use_history
         )
 
-        # 记录审计日志
+        # 记录审计日志（使用上游返回的真实 token 数据）
         total_time = time.time() - start_time
         answer_text = result.get("answer", "")
+        usage = result.get("usage", {})
         log_llm_usage(
             request_type=request_type,
             question=request.question,
             answer=answer_text,
             user_id=current_user.id,
             username=current_user.username,
-            prompt_tokens=estimate_tokens(request.question),
-            completion_tokens=estimate_tokens(answer_text),
-            total_tokens=estimate_tokens(request.question) + estimate_tokens(answer_text),
+            prompt_tokens=usage.get("input_tokens", 0),
+            completion_tokens=usage.get("output_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0),
             total_time=total_time,
             retrieval_count=result.get("retrieved_count", 0),
             status="success",
@@ -447,13 +449,14 @@ async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, cur
 }}
 """
         messages = [{"role": "user", "content": extract_prompt}]
-        llm_response = llm_client.invoke(messages)
+        llm_result = llm_client.invoke(messages)
+        llm_response_text = llm_result.content
 
         # 解析 LLM 返回的 JSON
         import json
         import re
         # 提取 JSON 部分
-        json_match = re.search(r'\{[\s\S]*\}', llm_response)
+        json_match = re.search(r'\{[\s\S]*\}', llm_response_text)
         if json_match:
             extracted_info = json.loads(json_match.group())
         else:
@@ -526,16 +529,16 @@ async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, cur
                 db.add(knowledge_entry)
                 db.commit()
 
-                # 写入审计日志（在 MySQL 事务成功后单独记录）
+                # 写入审计日志（使用上游返回的真实 token 数据）
                 log_llm_usage(
                     request_type=request_type,
                     question=f"添加知识: {extracted_info.get('title', '未命名')}",
-                    answer=llm_response[:500] if llm_response else None,
+                    answer=llm_response_text[:500] if llm_response_text else None,
                     user_id=current_user.id,
                     username=current_user.username,
-                    prompt_tokens=estimate_tokens(extract_prompt),
-                    completion_tokens=estimate_tokens(llm_response),
-                    total_tokens=estimate_tokens(extract_prompt) + estimate_tokens(llm_response),
+                    prompt_tokens=llm_result.input_tokens,
+                    completion_tokens=llm_result.output_tokens,
+                    total_tokens=llm_result.total_tokens,
                     status="success",
                     client_ip=http_request.client.host if http_request.client else None,
                     user_agent=http_request.headers.get("User-Agent")

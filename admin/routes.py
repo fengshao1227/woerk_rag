@@ -1063,17 +1063,19 @@ async def test_model(
         
         # 调用LLM
         messages = [{"role": "user", "content": request.prompt}]
-        response_text = llm.invoke(messages)
-        
+        llm_result = llm.invoke(messages)
+        response_text = llm_result.content
+
         request_time = time.time() - start_time
-        
-        # 估算token使用量（简单估算）
-        prompt_tokens = len(request.prompt) // 4
-        completion_tokens = len(response_text) // 4
-        total_tokens = prompt_tokens + completion_tokens
-        
-        # 估算成本（简化版，实际应根据模型定价）
-        cost = total_tokens * 0.00001  # 假设每1k tokens = $0.01
+
+        # 使用上游返回的真实 token 数据
+        prompt_tokens = llm_result.input_tokens
+        completion_tokens = llm_result.output_tokens
+        total_tokens = llm_result.total_tokens
+
+        # 使用精确的成本计算
+        from admin.usage_logger import calculate_cost
+        cost = calculate_cost(prompt_tokens, completion_tokens, model.model_id)
         
         # 记录使用日志
         usage_log = LLMUsageLog(

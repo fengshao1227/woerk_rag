@@ -10,11 +10,35 @@ import json
 from utils.logger import logger
 
 
+class LLMResponse:
+    """LLM 响应封装类"""
+
+    def __init__(self, content: str, usage: Optional[Dict[str, int]] = None):
+        self.content = content
+        self.usage = usage or {"input_tokens": 0, "output_tokens": 0}
+
+    @property
+    def input_tokens(self) -> int:
+        return self.usage.get("input_tokens", 0)
+
+    @property
+    def output_tokens(self) -> int:
+        return self.usage.get("output_tokens", 0)
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+    def __str__(self) -> str:
+        """兼容旧代码，直接转字符串返回 content"""
+        return self.content
+
+
 class BaseLLM(ABC):
     """LLM 基类"""
 
     @abstractmethod
-    def invoke(self, messages: List[Dict[str, str]]) -> str:
+    def invoke(self, messages: List[Dict[str, str]]) -> LLMResponse:
         """
         调用 LLM 生成回复
 
@@ -22,7 +46,7 @@ class BaseLLM(ABC):
             messages: 消息列表，格式为 [{"role": "user/assistant", "content": "..."}]
 
         Returns:
-            生成的回复文本
+            LLMResponse 对象，包含 content 和 usage 信息
         """
         pass
 
@@ -58,7 +82,7 @@ class AnthropicLLM(BaseLLM):
         self.max_tokens = max_tokens
         logger.info(f"AnthropicLLM 初始化: model={model}, base_url={self.base_url}")
 
-    def invoke(self, messages: List[Dict[str, str]], max_retries: int = 3) -> str:
+    def invoke(self, messages: List[Dict[str, str]], max_retries: int = 3) -> LLMResponse:
         """调用 Anthropic 格式 API，带重试机制"""
         import time
         import random
@@ -112,25 +136,34 @@ class AnthropicLLM(BaseLLM):
 
                 result = response.json()
 
-                # 解析响应 - 兼容多种格式
+                # 解析 usage 信息 (Anthropic 格式)
+                usage = {"input_tokens": 0, "output_tokens": 0}
+                if "usage" in result:
+                    usage["input_tokens"] = result["usage"].get("input_tokens", 0)
+                    usage["output_tokens"] = result["usage"].get("output_tokens", 0)
+
+                # 解析响应内容 - 兼容多种格式
+                content_text = ""
                 if "content" in result:
                     content = result["content"]
                     # Anthropic 标准格式: content 是列表
                     if isinstance(content, list) and len(content) > 0:
                         first_item = content[0]
                         if isinstance(first_item, dict) and "text" in first_item:
-                            return first_item["text"]
+                            content_text = first_item["text"]
                         elif isinstance(first_item, str):
-                            return first_item
+                            content_text = first_item
                         else:
-                            return str(first_item)
+                            content_text = str(first_item)
                     # content 直接是字符串
                     elif isinstance(content, str):
-                        return content
+                        content_text = content
                 elif "error" in result:
                     raise Exception(f"API 错误: {result['error']}")
+                else:
+                    content_text = str(result)
 
-                return str(result)
+                return LLMResponse(content=content_text, usage=usage)
 
             except Exception as e:
                 last_error = e
@@ -249,7 +282,7 @@ class OpenAILLM(BaseLLM):
         self.max_tokens = max_tokens
         logger.info(f"OpenAILLM 初始化: model={model}, base_url={self.base_url}")
 
-    def invoke(self, messages: List[Dict[str, str]], max_retries: int = 3) -> str:
+    def invoke(self, messages: List[Dict[str, str]], max_retries: int = 3) -> LLMResponse:
         """调用 OpenAI 格式 API，带重试机制"""
         import time
         import random
@@ -308,9 +341,16 @@ class OpenAILLM(BaseLLM):
 
                 result = response.json()
 
+                # 解析 usage 信息 (OpenAI 格式: prompt_tokens, completion_tokens)
+                usage = {"input_tokens": 0, "output_tokens": 0}
+                if "usage" in result:
+                    usage["input_tokens"] = result["usage"].get("prompt_tokens", 0)
+                    usage["output_tokens"] = result["usage"].get("completion_tokens", 0)
+
                 # 兼容不同的返回格式
+                content_text = ""
                 if isinstance(result, str):
-                    return result
+                    content_text = result
                 elif isinstance(result, dict):
                     if "choices" in result and len(result["choices"]) > 0:
                         choice = result["choices"][0]
@@ -319,25 +359,31 @@ class OpenAILLM(BaseLLM):
                             if isinstance(content, list) and len(content) > 0:
                                 first_item = content[0]
                                 if isinstance(first_item, dict) and "text" in first_item:
-                                    return first_item["text"]
-                                return str(first_item)
-                            return content if isinstance(content, str) else str(content)
+                                    content_text = first_item["text"]
+                                else:
+                                    content_text = str(first_item)
+                            else:
+                                content_text = content if isinstance(content, str) else str(content)
                         elif "text" in choice:
-                            return choice["text"]
+                            content_text = choice["text"]
                     elif "content" in result:
                         content = result["content"]
                         if isinstance(content, list) and len(content) > 0:
                             first_item = content[0]
                             if isinstance(first_item, dict) and "text" in first_item:
-                                return first_item["text"]
-                            return str(first_item)
-                        return content if isinstance(content, str) else str(content)
+                                content_text = first_item["text"]
+                            else:
+                                content_text = str(first_item)
+                        else:
+                            content_text = content if isinstance(content, str) else str(content)
                     elif "text" in result:
-                        return result["text"]
+                        content_text = result["text"]
                     elif "error" in result:
                         raise Exception(f"API 错误: {result['error']}")
+                    else:
+                        content_text = str(result)
 
-                return str(result)
+                return LLMResponse(content=content_text, usage=usage)
 
             except Exception as e:
                 last_error = e

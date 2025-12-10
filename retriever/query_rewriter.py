@@ -87,17 +87,18 @@ class MultiQueryRewriter(QueryRewriter):
 
         try:
             messages = [{"role": "user", "content": prompt}]
-            response = llm.invoke(messages)
+            llm_response = llm.invoke(messages)
+            response_text = llm_response.content
 
             # 提取 JSON 数组
-            json_match = re.search(r'\[[\s\S]*?\]', response)
+            json_match = re.search(r'\[[\s\S]*?\]', response_text)
             if json_match:
                 variants = json.loads(json_match.group())
                 if isinstance(variants, list) and len(variants) > 0:
                     logger.info(f"Query 改写成功: {query} -> {variants}")
                     return [query] + variants[:self.num_variants]
 
-            logger.warning(f"无法解析 LLM 响应: {response}")
+            logger.warning(f"无法解析 LLM 响应: {response_text}")
             return [query]
 
         except Exception as e:
@@ -157,7 +158,8 @@ class HyDERewriter(QueryRewriter):
 
         try:
             messages = [{"role": "user", "content": prompt}]
-            hypothetical_answer = llm.invoke(messages)
+            llm_response = llm.invoke(messages)
+            hypothetical_answer = llm_response.content
 
             if hypothetical_answer and len(hypothetical_answer.strip()) > 10:
                 logger.info(f"HyDE 改写成功: {query[:50]}...")
