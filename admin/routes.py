@@ -893,32 +893,39 @@ async def list_usage_logs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取使用记录列表"""
-    query = db.query(LLMUsageLog)
-    
+    """获取使用记录列表（使用 JOIN 优化，避免 N+1 查询）"""
+    # 使用 LEFT JOIN 一次性获取所有数据，避免 N+1 查询问题
+    query = db.query(
+        LLMUsageLog,
+        LLMModel.display_name.label('model_name'),
+        LLMProvider.name.label('provider_name')
+    ).outerjoin(
+        LLMModel, LLMUsageLog.model_id == LLMModel.id
+    ).outerjoin(
+        LLMProvider, LLMUsageLog.provider_id == LLMProvider.id
+    )
+
     # 时间过滤
     start_date = datetime.now() - timedelta(days=days)
     query = query.filter(LLMUsageLog.created_at >= start_date)
-    
+
     if model_id:
         query = query.filter(LLMUsageLog.model_id == model_id)
     if provider_id:
         query = query.filter(LLMUsageLog.provider_id == provider_id)
     if status:
         query = query.filter(LLMUsageLog.status == status)
-    
-    logs = query.order_by(LLMUsageLog.created_at.desc()).limit(limit).all()
-    
+
+    rows = query.order_by(LLMUsageLog.created_at.desc()).limit(limit).all()
+
     result = []
-    for log in logs:
-        model = db.query(LLMModel).filter(LLMModel.id == log.model_id).first() if log.model_id else None
-        provider = db.query(LLMProvider).filter(LLMProvider.id == log.provider_id).first() if log.provider_id else None
+    for log, model_name, provider_name in rows:
         result.append(UsageLogResponse(
             id=log.id,
             model_id=log.model_id,
-            model_name=model.display_name if model else "",
+            model_name=model_name or "",
             provider_id=log.provider_id,
-            provider_name=provider.name if provider else "",
+            provider_name=provider_name or "",
             prompt_tokens=log.prompt_tokens or 0,
             completion_tokens=log.completion_tokens or 0,
             total_tokens=log.total_tokens or 0,
