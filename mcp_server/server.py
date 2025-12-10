@@ -17,14 +17,48 @@ Claude Desktop 配置：
     }
 """
 import httpx
+import os
 from typing import Optional
 from mcp.server.fastmcp import FastMCP
 
 # 远程 RAG API 地址
-RAG_API_BASE = "https://rag.litxczv.shop"
+RAG_API_BASE = os.environ.get("RAG_API_BASE", "https://rag.litxczv.shop")
+
+# MCP 认证凭据（从环境变量读取，或使用默认值）
+MCP_USERNAME = os.environ.get("RAG_MCP_USERNAME", "admin")
+MCP_PASSWORD = os.environ.get("RAG_MCP_PASSWORD", "admin123")
 
 # 初始化 MCP Server
 mcp = FastMCP("RAG Knowledge Base")
+
+# 全局 token 缓存
+_auth_token: Optional[str] = None
+
+
+def get_auth_token() -> str:
+    """获取认证 token，如果没有则登录获取"""
+    global _auth_token
+    if _auth_token:
+        return _auth_token
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(
+                f"{RAG_API_BASE}/admin/api/auth/login",
+                json={"username": MCP_USERNAME, "password": MCP_PASSWORD}
+            )
+            response.raise_for_status()
+            data = response.json()
+            _auth_token = data.get("access_token")
+            return _auth_token
+    except Exception as e:
+        raise Exception(f"认证失败: {str(e)}")
+
+
+def get_auth_headers() -> dict:
+    """获取认证请求头"""
+    token = get_auth_token()
+    return {"Authorization": f"Bearer {token}"}
 
 
 @mcp.tool()
@@ -40,10 +74,12 @@ def query(question: str, top_k: int = 5) -> str:
         包含答案和来源的回复
     """
     try:
+        headers = get_auth_headers()
         with httpx.Client(timeout=60.0) as client:
             response = client.post(
                 f"{RAG_API_BASE}/query",
-                json={"question": question, "top_k": top_k}
+                json={"question": question, "top_k": top_k},
+                headers=headers
             )
             response.raise_for_status()
             result = response.json()
@@ -79,10 +115,12 @@ def search(query_text: str, top_k: int = 5) -> str:
         匹配的知识条目列表
     """
     try:
+        headers = get_auth_headers()
         with httpx.Client(timeout=30.0) as client:
             response = client.post(
                 f"{RAG_API_BASE}/search",
-                json={"query": query_text, "top_k": top_k}
+                json={"query": query_text, "top_k": top_k},
+                headers=headers
             )
             response.raise_for_status()
             data = response.json()
@@ -126,6 +164,7 @@ def add_knowledge(content: str, title: Optional[str] = None, category: str = "ge
         添加结果和提取的关键信息
     """
     try:
+        headers = get_auth_headers()
         with httpx.Client(timeout=60.0) as client:
             response = client.post(
                 f"{RAG_API_BASE}/add_knowledge",
@@ -133,7 +172,8 @@ def add_knowledge(content: str, title: Optional[str] = None, category: str = "ge
                     "content": content,
                     "title": title,
                     "category": category
-                }
+                },
+                headers=headers
             )
             response.raise_for_status()
             result = response.json()
