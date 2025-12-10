@@ -123,6 +123,7 @@ class QueryRequest(BaseModel):
     question: str
     top_k: int = 5
     filters: Optional[Dict] = None
+    group_ids: Optional[List[int]] = None  # 知识分组ID列表，只在指定分组中检索
     use_history: bool = True
 
 
@@ -131,6 +132,8 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[Dict]
     retrieved_count: int
+    from_cache: Optional[bool] = False
+    highlights: Optional[Dict] = None  # 引用高亮信息
 
 
 class SearchRequest(BaseModel):
@@ -138,6 +141,7 @@ class SearchRequest(BaseModel):
     query: str
     top_k: int = 5
     filters: Optional[Dict] = None
+    group_ids: Optional[List[int]] = None  # 知识分组ID列表，只在指定分组中检索
     score_threshold: float = 0.0
 
 
@@ -166,6 +170,7 @@ async def query(request: QueryRequest, current_user: dict = Depends(get_current_
             question=request.question,
             top_k=request.top_k,
             filters=request.filters,
+            group_ids=request.group_ids,
             use_history=request.use_history
         )
 
@@ -219,6 +224,7 @@ async def query_stream(request: QueryRequest, current_user: dict = Depends(get_c
                 question=request.question,
                 top_k=request.top_k,
                 filters=request.filters,
+                group_ids=request.group_ids,
                 use_history=request.use_history
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -246,11 +252,13 @@ async def search(request: SearchRequest, current_user: dict = Depends(get_curren
     results = []
 
     try:
-        results = vector_store.search(
+        # 使用 qa_chain 的 retriever（HybridSearch）支持分组过滤
+        results = qa_chain.retriever.search(
             query=request.query,
             top_k=request.top_k,
             filters=request.filters,
-            score_threshold=request.score_threshold
+            group_ids=request.group_ids,
+            use_hybrid=True
         )
         success = True
         return {"results": results, "count": len(results)}
@@ -276,7 +284,8 @@ async def search(request: SearchRequest, current_user: dict = Depends(get_curren
                     metadata=json.dumps({
                         "top_k": request.top_k,
                         "result_count": len(results),
-                        "filters": request.filters
+                        "filters": request.filters,
+                        "group_ids": request.group_ids
                     }, ensure_ascii=False) if success else None
                 )
                 db.add(usage_log)

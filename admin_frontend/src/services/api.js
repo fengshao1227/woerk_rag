@@ -83,6 +83,27 @@ export const knowledgeAPI = {
   }
 };
 
+// 知识分组 API
+export const groupAPI = {
+  list: (includeItems = true) => api.get('/groups', { params: { include_items: includeItems } }),
+  create: data => api.post('/groups', data),
+  get: id => api.get(`/groups/${id}`),
+  update: (id, data) => api.put(`/groups/${id}`, data),
+  delete: id => api.delete(`/groups/${id}`),
+  // 分组内知识条目管理
+  listItems: id => api.get(`/groups/${id}/items`),
+  addItems: (id, qdrantIds) => api.post(`/groups/${id}/items`, { qdrant_ids: qdrantIds }),
+  removeItem: (id, qdrantId) => api.delete(`/groups/${id}/items/${qdrantId}`)
+};
+
+// 版本追踪 API
+export const versionAPI = {
+  list: (qdrantId) => api.get(`/knowledge/${qdrantId}/versions`),
+  getDetail: (qdrantId, version) => api.get(`/knowledge/${qdrantId}/versions/${version}`),
+  rollback: (qdrantId, targetVersion, reason) =>
+    api.post(`/knowledge/${qdrantId}/rollback`, { target_version: targetVersion, reason })
+};
+
 export const usageAPI = {
   getLogs: (modelId, providerId, status, days, limit) =>
     api.get('/usage/logs', { params: { model_id: modelId, provider_id: providerId, status, days, limit } }),

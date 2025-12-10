@@ -161,6 +161,7 @@ class QAChatChain:
         question: str,
         top_k: int = 5,
         filters: Dict = None,
+        group_ids: List[int] = None,
         use_history: bool = True,
         use_reranker: bool = None,
         use_cache: bool = True
@@ -172,6 +173,7 @@ class QAChatChain:
             question: 问题
             top_k: 检索结果数量
             filters: 过滤条件
+            group_ids: 知识分组ID列表，只在指定分组中检索
             use_history: 是否使用对话历史
             use_reranker: 是否使用 Reranker（None 时使用配置默认值）
             use_cache: 是否使用语义缓存
@@ -179,8 +181,8 @@ class QAChatChain:
         Returns:
             包含答案和检索结果的字典
         """
-        # 1. 检查语义缓存
-        if use_cache and self.semantic_cache:
+        # 1. 检查语义缓存（仅在没有分组过滤时使用缓存）
+        if use_cache and self.semantic_cache and not group_ids:
             cached = self.semantic_cache.get(question)
             if cached:
                 logger.info(f"语义缓存命中: {question[:50]}...")
@@ -193,11 +195,12 @@ class QAChatChain:
                 }
 
         # 2. 检索相关文档
-        logger.info(f"检索问题: {question}")
+        logger.info(f"检索问题: {question}" + (f"，分组过滤: {group_ids}" if group_ids else ""))
         results = self.retriever.search(
             question,
             top_k=top_k,
             filters=filters,
+            group_ids=group_ids,
             use_reranker=use_reranker
         )
 
@@ -234,16 +237,31 @@ class QAChatChain:
                 {
                     "file_path": r.get("file_path", ""),
                     "score": r.get("rerank_score", r.get("score", 0.0)),
-                    "preview": r.get("content", "")[:200] + "..."
+                    "preview": r.get("content", "")[:200] + "...",
+                    "content": r.get("content", "")  # 保留完整内容用于高亮匹配
                 }
                 for r in results
             ]
+
+            # 引用高亮
+            highlights = None
+            try:
+                from utils.reference_highlighter import find_reference_highlights
+                highlight_result = find_reference_highlights(answer, sources)
+                highlights = {
+                    "matches": highlight_result["matches"],
+                    "highlighted_answer": highlight_result["highlighted_answer"],
+                    "source_citations": highlight_result["source_citations"]
+                }
+            except Exception as e:
+                logger.warning(f"引用高亮处理失败: {e}")
 
             response = {
                 "answer": answer,
                 "sources": sources,
                 "retrieved_count": len(results),
-                "from_cache": False
+                "from_cache": False,
+                "highlights": highlights
             }
 
             # 3. 存入语义缓存
@@ -293,6 +311,7 @@ class QAChatChain:
         question: str,
         top_k: int = 5,
         filters: Dict = None,
+        group_ids: List[int] = None,
         use_history: bool = True,
         use_reranker: bool = None
     ) -> Generator[Dict, None, None]:
@@ -303,6 +322,7 @@ class QAChatChain:
             question: 问题
             top_k: 检索结果数量
             filters: 过滤条件
+            group_ids: 知识分组ID列表，只在指定分组中检索
             use_history: 是否使用对话历史
             use_reranker: 是否使用 Reranker
 
@@ -312,8 +332,8 @@ class QAChatChain:
             - {"type": "chunk", "data": "..."}    答案片段
             - {"type": "done", "data": "..."}     完整答案
         """
-        # 检查语义缓存
-        if self.semantic_cache:
+        # 检查语义缓存（仅在没有分组过滤时使用缓存）
+        if self.semantic_cache and not group_ids:
             cached = self.semantic_cache.get(question)
             if cached:
                 logger.info(f"语义缓存命中: {question[:50]}...")
@@ -326,11 +346,12 @@ class QAChatChain:
                 return
 
         # 检索相关文档
-        logger.info(f"流式检索问题: {question}")
+        logger.info(f"流式检索问题: {question}" + (f"，分组过滤: {group_ids}" if group_ids else ""))
         results = self.retriever.search(
             question,
             top_k=top_k,
             filters=filters,
+            group_ids=group_ids,
             use_reranker=use_reranker
         )
 

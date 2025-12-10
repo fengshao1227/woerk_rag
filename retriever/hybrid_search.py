@@ -13,6 +13,36 @@ from config import (
 from utils.logger import logger
 
 
+def get_group_qdrant_ids(group_ids: List[int]) -> List[str]:
+    """
+    根据分组ID列表获取所有关联的qdrant_id
+
+    Args:
+        group_ids: 分组ID列表
+
+    Returns:
+        该分组下所有知识条目的qdrant_id列表
+    """
+    if not group_ids:
+        return []
+
+    try:
+        from admin.database import SessionLocal
+        from admin.models import KnowledgeGroupItem
+
+        db = SessionLocal()
+        try:
+            items = db.query(KnowledgeGroupItem.qdrant_id).filter(
+                KnowledgeGroupItem.group_id.in_(group_ids)
+            ).all()
+            return [item[0] for item in items]
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"获取分组qdrant_ids失败: {e}")
+        return []
+
+
 class HybridSearch:
     """混合检索器（支持 Reranker 重排 + Query 改写 + 高级关键词索引）"""
 
@@ -148,6 +178,7 @@ class HybridSearch:
         query: str,
         top_k: int = TOP_K,
         filters: Optional[Dict] = None,
+        group_ids: Optional[List[int]] = None,
         use_hybrid: bool = True,
         vector_weight: float = 0.7,
         keyword_weight: float = 0.3,
@@ -161,6 +192,7 @@ class HybridSearch:
             query: 查询文本
             top_k: 返回结果数量
             filters: 过滤条件
+            group_ids: 知识分组ID列表，只检索这些分组中的知识
             use_hybrid: 是否使用混合检索
             vector_weight: 向量检索权重
             keyword_weight: 关键词检索权重
@@ -170,6 +202,14 @@ class HybridSearch:
         Returns:
             检索结果列表
         """
+        # 处理分组过滤
+        allowed_qdrant_ids = None
+        if group_ids:
+            allowed_qdrant_ids = set(get_group_qdrant_ids(group_ids))
+            if not allowed_qdrant_ids:
+                logger.warning(f"分组 {group_ids} 中没有知识条目")
+                return []
+            logger.info(f"分组过滤: 限制在 {len(allowed_qdrant_ids)} 个知识条目内检索")
         # 确定是否使用 Reranker
         if use_reranker is None:
             use_reranker = RERANKER_ENABLE
@@ -242,6 +282,13 @@ class HybridSearch:
         # 计算综合分数并排序
         results = []
         for result_id, result in result_map.items():
+            # 分组过滤：如果指定了分组，只保留分组内的结果
+            if allowed_qdrant_ids:
+                # result_id 可能是 qdrant_id 或 file_path:chunk_index 格式
+                qdrant_id = result.get("id") or result_id.split(":")[0] if ":" in result_id else result_id
+                if qdrant_id not in allowed_qdrant_ids:
+                    continue
+
             # 多查询命中加分
             query_boost = 1.0 + (result.get("query_count", 1) - 1) * 0.1
             combined_score = (result.get("vector_score", 0.0) + result.get("keyword_score", 0.0)) * query_boost

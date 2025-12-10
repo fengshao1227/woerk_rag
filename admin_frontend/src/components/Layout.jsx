@@ -1,6 +1,6 @@
 import { Layout as AntLayout, Menu } from 'antd';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { DashboardOutlined, ApiOutlined, DatabaseOutlined, BookOutlined, LogoutOutlined, BarChartOutlined, MessageOutlined, ExperimentOutlined, RobotOutlined } from '@ant-design/icons';
+import { DashboardOutlined, ApiOutlined, DatabaseOutlined, BookOutlined, LogoutOutlined, BarChartOutlined, MessageOutlined, ExperimentOutlined, RobotOutlined, FolderOutlined } from '@ant-design/icons';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -13,6 +13,7 @@ export default function Layout() {
     { key: '/chat', icon: <MessageOutlined />, label: '智能问答' },
     { key: '/agent', icon: <RobotOutlined />, label: '智能Agent' },
     { key: '/knowledge', icon: <BookOutlined />, label: '知识库' },
+    { key: '/groups', icon: <FolderOutlined />, label: '知识分组' },
     { key: '/providers', icon: <ApiOutlined />, label: 'LLM供应商' },
     { key: '/models', icon: <DatabaseOutlined />, label: 'LLM模型' },
     { key: '/usage', icon: <BarChartOutlined />, label: '使用统计' },

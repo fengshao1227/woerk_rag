@@ -1,17 +1,115 @@
-import { useState, useRef, useEffect } from 'react';
-import { Input, Button, Card, Spin, Empty, Tag, Collapse, Switch, Tooltip } from 'antd';
-import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { Input, Button, Card, Spin, Empty, Tag, Collapse, Switch, Tooltip, Popover } from 'antd';
+import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, ThunderboltOutlined, LinkOutlined } from '@ant-design/icons';
 import { chatAPI } from '../services/api';
 
 const { TextArea } = Input;
+
+/**
+ * 渲染带引用高亮的回答内容
+ * 将 Markdown 格式的引用标记 **text**[^n] 转换为可点击的高亮元素
+ */
+const HighlightedAnswer = ({ content, highlights, sources, onSourceClick }) => {
+  // 如果没有高亮信息，直接显示原文
+  if (!highlights || !highlights.highlighted_answer) {
+    return <span style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{content}</span>;
+  }
+
+  const highlightedAnswer = highlights.highlighted_answer;
+  const sourceCitations = highlights.source_citations || {};
+
+  // 解析高亮标记: **text**[^n] 格式
+  const parseHighlights = (text) => {
+    const regex = /\*\*(.+?)\*\*\[\^(\d+)\]/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      // 添加匹配前的普通文本
+      if (match.index > lastIndex) {
+        parts.push({
+          type: 'text',
+          content: text.slice(lastIndex, match.index)
+        });
+      }
+      // 添加高亮部分
+      parts.push({
+        type: 'highlight',
+        content: match[1],
+        sourceIndex: parseInt(match[2]) - 1  // 转为 0-based 索引
+      });
+      lastIndex = match.index + match[0].length;
+    }
+    // 添加剩余文本
+    if (lastIndex < text.length) {
+      parts.push({
+        type: 'text',
+        content: text.slice(lastIndex)
+      });
+    }
+    return parts;
+  };
+
+  const parts = useMemo(() => parseHighlights(highlightedAnswer), [highlightedAnswer]);
+
+  return (
+    <span style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+      {parts.map((part, idx) => {
+        if (part.type === 'text') {
+          return <span key={idx}>{part.content}</span>;
+        }
+        // 高亮引用
+        const source = sources?.[part.sourceIndex];
+        const popoverContent = source ? (
+          <div style={{ maxWidth: 300, fontSize: 12 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+              {source.file_path || source.title || '来源 ' + (part.sourceIndex + 1)}
+            </div>
+            <div style={{ color: '#666' }}>
+              {source.preview?.slice(0, 150) || source.content?.slice(0, 150)}...
+            </div>
+            {source.score && (
+              <div style={{ color: '#1890ff', marginTop: 4 }}>
+                相关度: {(source.score * 100).toFixed(1)}%
+              </div>
+            )}
+          </div>
+        ) : null;
+
+        return (
+          <Popover key={idx} content={popoverContent} title={null} trigger="hover">
+            <span
+              className="highlight-citation"
+              onClick={() => onSourceClick?.(part.sourceIndex)}
+              style={{
+                backgroundColor: 'rgba(24, 144, 255, 0.15)',
+                borderBottom: '2px solid #1890ff',
+                padding: '0 2px',
+                borderRadius: 2,
+                cursor: 'pointer',
+                transition: 'background-color 0.2s'
+              }}
+            >
+              {part.content}
+              <sup style={{ color: '#1890ff', marginLeft: 1 }}>[{part.sourceIndex + 1}]</sup>
+            </span>
+          </Popover>
+        );
+      })}
+    </span>
+  );
+};
 
 export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [streamMode, setStreamMode] = useState(true);
+  const [activeSourceIndex, setActiveSourceIndex] = useState(null);  // 当前高亮的来源索引
   const messagesEndRef = useRef(null);
   const abortControllerRef = useRef(null);
+  const sourceRefs = useRef({});  // 来源元素的引用
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -20,6 +118,23 @@ export default function Chat() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // 点击引用高亮时滚动到对应来源
+  const handleSourceClick = (messageId, sourceIndex) => {
+    setActiveSourceIndex({ messageId, sourceIndex });
+    // 自动展开来源折叠面板并滚动
+    const refKey = `${messageId}-${sourceIndex}`;
+    const sourceElement = sourceRefs.current[refKey];
+    if (sourceElement) {
+      sourceElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // 闪烁高亮效果
+      sourceElement.classList.add('source-highlight-active');
+      setTimeout(() => {
+        sourceElement.classList.remove('source-highlight-active');
+        setActiveSourceIndex(null);
+      }, 2000);
+    }
+  };
 
   const handleSendStream = async () => {
     if (!input.trim() || loading) return;
@@ -109,7 +224,8 @@ export default function Chat() {
         role: 'assistant',
         content: data.answer,
         sources: data.sources,
-        retrieved_count: data.retrieved_count
+        retrieved_count: data.retrieved_count,
+        highlights: data.highlights  // 添加引用高亮信息
       };
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
@@ -220,19 +336,36 @@ export default function Chat() {
                     )}
                   </div>
                   <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                    {msg.content}
-                    {msg.isStreaming && <span className="cursor-blink">|</span>}
+                    {msg.role === 'assistant' && !msg.isStreaming && msg.highlights ? (
+                      <HighlightedAnswer
+                        content={msg.content}
+                        highlights={msg.highlights}
+                        sources={msg.sources}
+                        onSourceClick={(sourceIndex) => handleSourceClick(msg.id || index, sourceIndex)}
+                      />
+                    ) : (
+                      <>
+                        {msg.content}
+                        {msg.isStreaming && <span className="cursor-blink">|</span>}
+                      </>
+                    )}
                   </div>
                   {/* 显示来源 */}
                   {msg.sources && msg.sources.length > 0 && !msg.isStreaming && (
                     <Collapse
                       size="small"
                       style={{ marginTop: 12, background: 'rgba(0,0,0,0.02)' }}
+                      defaultActiveKey={activeSourceIndex?.messageId === (msg.id || index) ? ['1'] : []}
                       items={[{
                         key: '1',
                         label: (
                           <span style={{ fontSize: 12 }}>
                             <FileTextOutlined /> 参考来源 ({msg.sources.length})
+                            {msg.highlights?.source_citations && Object.keys(msg.highlights.source_citations).length > 0 && (
+                              <Tag color="blue" size="small" style={{ marginLeft: 8 }}>
+                                <LinkOutlined /> 有引用标记
+                              </Tag>
+                            )}
                           </span>
                         ),
                         children: (
@@ -240,18 +373,37 @@ export default function Chat() {
                             {msg.sources.map((source, idx) => (
                               <div
                                 key={idx}
+                                ref={(el) => {
+                                  const refKey = `${msg.id || index}-${idx}`;
+                                  sourceRefs.current[refKey] = el;
+                                }}
+                                className={`source-item ${
+                                  activeSourceIndex?.messageId === (msg.id || index) &&
+                                  activeSourceIndex?.sourceIndex === idx
+                                    ? 'source-highlight-active'
+                                    : ''
+                                }`}
                                 style={{
                                   padding: 8,
                                   background: '#fff',
                                   borderRadius: 4,
                                   fontSize: 12,
-                                  border: '1px solid #f0f0f0'
+                                  border: msg.highlights?.source_citations?.[idx]
+                                    ? '2px solid #1890ff'
+                                    : '1px solid #f0f0f0',
+                                  transition: 'all 0.3s'
                                 }}
                               >
                                 <div style={{ fontWeight: 500, marginBottom: 4 }}>
+                                  <span style={{ marginRight: 8 }}>[{idx + 1}]</span>
                                   {source.file_path || source.title || '未命名'}
                                   {source.category && (
                                     <Tag size="small" style={{ marginLeft: 8 }}>{source.category}</Tag>
+                                  )}
+                                  {msg.highlights?.source_citations?.[idx] && (
+                                    <Tag color="blue" size="small" style={{ marginLeft: 4 }}>
+                                      被引用 {msg.highlights.source_citations[idx]} 次
+                                    </Tag>
                                   )}
                                 </div>
                                 <div style={{ color: '#666' }}>
@@ -313,6 +465,22 @@ export default function Chat() {
         @keyframes blink {
           0%, 100% { opacity: 1; }
           50% { opacity: 0; }
+        }
+        .highlight-citation:hover {
+          background-color: rgba(24, 144, 255, 0.3) !important;
+        }
+        .source-item {
+          transition: all 0.3s ease;
+        }
+        .source-highlight-active {
+          background-color: rgba(24, 144, 255, 0.15) !important;
+          border-color: #1890ff !important;
+          box-shadow: 0 0 8px rgba(24, 144, 255, 0.4);
+          animation: pulse 0.5s ease-in-out 2;
+        }
+        @keyframes pulse {
+          0%, 100% { box-shadow: 0 0 8px rgba(24, 144, 255, 0.4); }
+          50% { box-shadow: 0 0 16px rgba(24, 144, 255, 0.8); }
         }
       `}</style>
     </div>

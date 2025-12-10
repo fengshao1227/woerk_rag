@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Providers from './pages/Providers';
 import Models from './pages/Models';
 import Knowledge from './pages/Knowledge';
+import Groups from './pages/Groups';
 import UsageStats from './pages/UsageStats';
 import Chat from './pages/Chat';
 import Agent from './pages/Agent';
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="providers" element={<Providers />} />
             <Route path="models" element={<Models />} />
             <Route path="knowledge" element={<Knowledge />} />
+            <Route path="groups" element={<Groups />} />
             <Route path="usage" element={<UsageStats />} />
             <Route path="chat" element={<Chat />} />
             <Route path="agent" element={<Agent />} />

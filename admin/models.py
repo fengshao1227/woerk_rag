@@ -1,7 +1,7 @@
 """
 SQLAlchemy 数据模型
 """
-from sqlalchemy import Column, Integer, String, Text, Boolean, DECIMAL, Enum, ForeignKey, TIMESTAMP, JSON
+from sqlalchemy import Column, Integer, String, Text, Boolean, DECIMAL, Enum, ForeignKey, TIMESTAMP, JSON, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from admin.database import Base
@@ -125,3 +125,59 @@ class LLMUsageLog(Base):
     model = relationship("LLMModel")
     provider = relationship("LLMProvider")
     user = relationship("User")
+
+
+class KnowledgeGroup(Base):
+    """知识分组表 - 支持按项目/主题组织知识"""
+    __tablename__ = "knowledge_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    color = Column(String(20), default='#1890ff')  # 用于前端显示的颜色
+    icon = Column(String(50), default='folder')  # 图标名称
+    is_active = Column(Boolean, default=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    # 关联分组项
+    items = relationship("KnowledgeGroupItem", back_populates="group", cascade="all, delete-orphan")
+
+
+class KnowledgeGroupItem(Base):
+    """知识分组关联表 - 多对多关系"""
+    __tablename__ = "knowledge_group_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("knowledge_groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    qdrant_id = Column(String(64), nullable=False, index=True)  # 关联 Qdrant 中的知识点
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+    # 关联分组
+    group = relationship("KnowledgeGroup", back_populates="items")
+
+    # 联合唯一约束：同一知识不能重复加入同一分组
+    __table_args__ = (
+        UniqueConstraint('group_id', 'qdrant_id', name='uq_group_qdrant'),
+        {'mysql_charset': 'utf8mb4'},
+    )
+
+
+class KnowledgeVersion(Base):
+    """知识版本历史表 - 全量快照模式"""
+    __tablename__ = "knowledge_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    qdrant_id = Column(String(64), nullable=False, index=True)  # 关联 Qdrant 中的知识点
+    version = Column(Integer, nullable=False, default=1)  # 版本号
+    content = Column(Text, nullable=False)  # 完整内容快照
+    metadata = Column(JSON, nullable=True)  # 元数据快照
+    change_type = Column(Enum('create', 'update', 'delete'), default='create')  # 变更类型
+    changed_by = Column(String(50), nullable=True)  # 操作人
+    change_reason = Column(String(255), nullable=True)  # 变更原因
+    created_at = Column(TIMESTAMP, server_default=func.now(), index=True)
+
+    # 联合索引：加速按知识ID查询版本历史
+    __table_args__ = (
+        {'mysql_charset': 'utf8mb4'},
+    )

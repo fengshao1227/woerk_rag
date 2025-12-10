@@ -330,3 +330,116 @@ class CacheStatsResponse(BaseModel):
     hit_rate: float
     avg_similarity: float
     cache_size_mb: float
+
+
+# ============================================================
+# 知识分组相关
+# ============================================================
+class KnowledgeGroupCreate(BaseModel):
+    """创建知识分组"""
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
+    color: str = Field(default="#1890ff", pattern="^#[0-9a-fA-F]{6}$")
+    icon: str = Field(default="folder", max_length=50)
+
+
+class KnowledgeGroupUpdate(BaseModel):
+    """更新知识分组"""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = None
+    color: Optional[str] = Field(None, pattern="^#[0-9a-fA-F]{6}$")
+    icon: Optional[str] = Field(None, max_length=50)
+    is_active: Optional[bool] = None
+
+
+class KnowledgeGroupResponse(BaseModel):
+    """知识分组响应"""
+    id: int
+    name: str
+    description: Optional[str]
+    color: str
+    icon: str
+    is_active: bool
+    items_count: int = 0  # 分组内知识条目数量
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class KnowledgeGroupListResponse(BaseModel):
+    """知识分组列表响应"""
+    items: List[KnowledgeGroupResponse]
+    total: int
+
+
+class GroupItemsRequest(BaseModel):
+    """添加/移除分组项请求"""
+    qdrant_ids: List[str] = Field(..., min_length=1)
+
+
+class GroupItemResponse(BaseModel):
+    """分组项响应"""
+    id: int
+    group_id: int
+    qdrant_id: str
+    title: Optional[str] = None  # 从 KnowledgeEntry 关联获取
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+# 知识版本追踪相关
+# ============================================================
+class KnowledgeVersionResponse(BaseModel):
+    """知识版本响应"""
+    id: int
+    qdrant_id: str
+    version: int
+    change_type: str
+    changed_by: Optional[str]
+    change_reason: Optional[str]
+    content_preview: str = ""  # 内容预览（前200字）
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class KnowledgeVersionDetailResponse(BaseModel):
+    """知识版本详情（包含完整内容）"""
+    id: int
+    qdrant_id: str
+    version: int
+    content: str
+    metadata: Optional[dict]
+    change_type: str
+    changed_by: Optional[str]
+    change_reason: Optional[str]
+    created_at: datetime
+
+
+class KnowledgeVersionListResponse(BaseModel):
+    """版本历史列表响应"""
+    qdrant_id: str
+    current_version: int
+    versions: List[KnowledgeVersionResponse]
+    total: int
+
+
+class RollbackRequest(BaseModel):
+    """回滚请求"""
+    target_version: int = Field(..., ge=1)
+    reason: Optional[str] = None
+
+
+class RollbackResponse(BaseModel):
+    """回滚响应"""
+    success: bool
+    message: str
+    new_version: int
+    qdrant_id: str
+

@@ -8,7 +8,7 @@ from typing import List, Optional
 from datetime import timedelta
 
 from admin.database import get_db
-from admin.models import User, LLMProvider, LLMModel, KnowledgeEntry, LLMUsageLog
+from admin.models import User, LLMProvider, LLMModel, KnowledgeEntry, LLMUsageLog, KnowledgeGroup, KnowledgeGroupItem, KnowledgeVersion
 from admin.schemas import (
     LoginRequest, TokenResponse, UserResponse,
     ProviderCreate, ProviderUpdate, ProviderResponse,
@@ -18,7 +18,11 @@ from admin.schemas import (
     UsageLogResponse, UsageStatsResponse, TestModelRequest, TestModelResponse,
     TestCaseCreate, TestCaseUpdate, TestCaseResponse,
     EvalRunRequest, EvalRunResponse, EvalSummaryResponse, EvalResultResponse,
-    RetrievalMetrics, AnswerMetrics, CacheStatsResponse
+    RetrievalMetrics, AnswerMetrics, CacheStatsResponse,
+    KnowledgeGroupCreate, KnowledgeGroupUpdate, KnowledgeGroupResponse, KnowledgeGroupListResponse,
+    GroupItemsRequest, GroupItemResponse,
+    KnowledgeVersionResponse, KnowledgeVersionDetailResponse, KnowledgeVersionListResponse,
+    RollbackRequest, RollbackResponse
 )
 from admin.auth import (
     authenticate_user, create_access_token, get_current_user,
@@ -557,12 +561,42 @@ async def update_knowledge(
     if not entry:
         raise HTTPException(status_code=404, detail="知识条目不存在")
 
+    # 更新前先保存旧状态用于版本追踪
+    old_metadata = {
+        "title": entry.title,
+        "category": entry.category,
+        "summary": entry.summary,
+        "keywords": entry.keywords,
+        "tech_stack": entry.tech_stack
+    }
+
     update_data = data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(entry, key, value)
 
     db.commit()
     db.refresh(entry)
+
+    # 创建版本记录
+    try:
+        from utils.version_tracker import track_knowledge_change
+        new_metadata = {
+            "title": entry.title,
+            "category": entry.category,
+            "summary": entry.summary,
+            "keywords": entry.keywords,
+            "tech_stack": entry.tech_stack
+        }
+        track_knowledge_change(
+            qdrant_id=entry.qdrant_id,
+            content=entry.content_preview or "",
+            metadata=new_metadata,
+            change_type="update",
+            user=current_user.username,
+            reason=f"更新元数据: {list(update_data.keys())}"
+        )
+    except Exception as e:
+        logger.warning(f"版本追踪失败: {e}")
 
     return KnowledgeResponse.model_validate(entry)
 
@@ -579,6 +613,27 @@ async def delete_knowledge(
         raise HTTPException(status_code=404, detail="知识条目不存在")
 
     qdrant_id = entry.qdrant_id
+
+    # 0. 创建删除版本记录（用于可能的恢复）
+    try:
+        from utils.version_tracker import track_knowledge_change
+        metadata = {
+            "title": entry.title,
+            "category": entry.category,
+            "summary": entry.summary,
+            "keywords": entry.keywords,
+            "tech_stack": entry.tech_stack
+        }
+        track_knowledge_change(
+            qdrant_id=qdrant_id,
+            content=entry.content_preview or "",
+            metadata=metadata,
+            change_type="delete",
+            user=current_user.username,
+            reason="删除知识条目"
+        )
+    except Exception as e:
+        logger.warning(f"版本追踪失败: {e}")
 
     # 1. 从 Qdrant 删除向量
     try:
@@ -1349,3 +1404,364 @@ async def import_knowledge(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
+
+
+# ============================================================
+# 知识分组管理
+# ============================================================
+@router.get("/groups", response_model=KnowledgeGroupListResponse)
+async def list_groups(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取知识分组列表"""
+    groups = db.query(KnowledgeGroup).filter(KnowledgeGroup.is_active == True).order_by(KnowledgeGroup.id.desc()).all()
+
+    result = []
+    for g in groups:
+        items_count = db.query(func.count(KnowledgeGroupItem.id)).filter(KnowledgeGroupItem.group_id == g.id).scalar() or 0
+        result.append(KnowledgeGroupResponse(
+            id=g.id,
+            name=g.name,
+            description=g.description,
+            color=g.color,
+            icon=g.icon,
+            is_active=g.is_active,
+            items_count=items_count,
+            created_at=g.created_at,
+            updated_at=g.updated_at
+        ))
+
+    return KnowledgeGroupListResponse(items=result, total=len(result))
+
+
+@router.post("/groups", response_model=KnowledgeGroupResponse)
+async def create_group(
+    data: KnowledgeGroupCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """创建知识分组"""
+    group = KnowledgeGroup(**data.model_dump())
+    db.add(group)
+    db.commit()
+    db.refresh(group)
+
+    return KnowledgeGroupResponse(
+        id=group.id,
+        name=group.name,
+        description=group.description,
+        color=group.color,
+        icon=group.icon,
+        is_active=group.is_active,
+        items_count=0,
+        created_at=group.created_at,
+        updated_at=group.updated_at
+    )
+
+
+@router.get("/groups/{group_id}", response_model=KnowledgeGroupResponse)
+async def get_group(
+    group_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取分组详情"""
+    group = db.query(KnowledgeGroup).filter(KnowledgeGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="分组不存在")
+
+    items_count = db.query(func.count(KnowledgeGroupItem.id)).filter(KnowledgeGroupItem.group_id == group.id).scalar() or 0
+
+    return KnowledgeGroupResponse(
+        id=group.id,
+        name=group.name,
+        description=group.description,
+        color=group.color,
+        icon=group.icon,
+        is_active=group.is_active,
+        items_count=items_count,
+        created_at=group.created_at,
+        updated_at=group.updated_at
+    )
+
+
+@router.put("/groups/{group_id}", response_model=KnowledgeGroupResponse)
+async def update_group(
+    group_id: int,
+    data: KnowledgeGroupUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """更新分组"""
+    group = db.query(KnowledgeGroup).filter(KnowledgeGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="分组不存在")
+
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(group, key, value)
+
+    db.commit()
+    db.refresh(group)
+
+    items_count = db.query(func.count(KnowledgeGroupItem.id)).filter(KnowledgeGroupItem.group_id == group.id).scalar() or 0
+
+    return KnowledgeGroupResponse(
+        id=group.id,
+        name=group.name,
+        description=group.description,
+        color=group.color,
+        icon=group.icon,
+        is_active=group.is_active,
+        items_count=items_count,
+        created_at=group.created_at,
+        updated_at=group.updated_at
+    )
+
+
+@router.delete("/groups/{group_id}", response_model=MessageResponse)
+async def delete_group(
+    group_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """删除分组"""
+    group = db.query(KnowledgeGroup).filter(KnowledgeGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="分组不存在")
+
+    db.delete(group)
+    db.commit()
+    return MessageResponse(message="分组已删除")
+
+
+@router.get("/groups/{group_id}/items", response_model=List[GroupItemResponse])
+async def list_group_items(
+    group_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取分组内的知识条目"""
+    group = db.query(KnowledgeGroup).filter(KnowledgeGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="分组不存在")
+
+    items = db.query(KnowledgeGroupItem).filter(KnowledgeGroupItem.group_id == group_id).all()
+
+    result = []
+    for item in items:
+        # 获取知识条目标题
+        entry = db.query(KnowledgeEntry).filter(KnowledgeEntry.qdrant_id == item.qdrant_id).first()
+        result.append(GroupItemResponse(
+            id=item.id,
+            group_id=item.group_id,
+            qdrant_id=item.qdrant_id,
+            title=entry.title if entry else None,
+            created_at=item.created_at
+        ))
+
+    return result
+
+
+@router.post("/groups/{group_id}/items", response_model=MessageResponse)
+async def add_group_items(
+    group_id: int,
+    data: GroupItemsRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """添加知识条目到分组"""
+    group = db.query(KnowledgeGroup).filter(KnowledgeGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="分组不存在")
+
+    added = 0
+    skipped = 0
+    for qdrant_id in data.qdrant_ids:
+        # 检查是否已存在
+        existing = db.query(KnowledgeGroupItem).filter(
+            KnowledgeGroupItem.group_id == group_id,
+            KnowledgeGroupItem.qdrant_id == qdrant_id
+        ).first()
+
+        if existing:
+            skipped += 1
+            continue
+
+        item = KnowledgeGroupItem(group_id=group_id, qdrant_id=qdrant_id)
+        db.add(item)
+        added += 1
+
+    db.commit()
+    return MessageResponse(message=f"已添加 {added} 条，跳过 {skipped} 条（已存在）")
+
+
+@router.delete("/groups/{group_id}/items", response_model=MessageResponse)
+async def remove_group_items(
+    group_id: int,
+    data: GroupItemsRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """从分组移除知识条目"""
+    group = db.query(KnowledgeGroup).filter(KnowledgeGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="分组不存在")
+
+    removed = db.query(KnowledgeGroupItem).filter(
+        KnowledgeGroupItem.group_id == group_id,
+        KnowledgeGroupItem.qdrant_id.in_(data.qdrant_ids)
+    ).delete(synchronize_session=False)
+
+    db.commit()
+    return MessageResponse(message=f"已移除 {removed} 条")
+
+
+# ============================================================
+# 知识版本追踪
+# ============================================================
+@router.get("/knowledge/{qdrant_id}/versions", response_model=KnowledgeVersionListResponse)
+async def list_knowledge_versions(
+    qdrant_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取知识条目的版本历史"""
+    versions = db.query(KnowledgeVersion).filter(
+        KnowledgeVersion.qdrant_id == qdrant_id
+    ).order_by(KnowledgeVersion.version.desc()).all()
+
+    current_version = max([v.version for v in versions]) if versions else 0
+
+    result = []
+    for v in versions:
+        result.append(KnowledgeVersionResponse(
+            id=v.id,
+            qdrant_id=v.qdrant_id,
+            version=v.version,
+            change_type=v.change_type,
+            changed_by=v.changed_by,
+            change_reason=v.change_reason,
+            content_preview=v.content[:200] + "..." if len(v.content) > 200 else v.content,
+            created_at=v.created_at
+        ))
+
+    return KnowledgeVersionListResponse(
+        qdrant_id=qdrant_id,
+        current_version=current_version,
+        versions=result,
+        total=len(result)
+    )
+
+
+@router.get("/knowledge/{qdrant_id}/versions/{version}", response_model=KnowledgeVersionDetailResponse)
+async def get_knowledge_version(
+    qdrant_id: str,
+    version: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取特定版本的详细内容"""
+    version_entry = db.query(KnowledgeVersion).filter(
+        KnowledgeVersion.qdrant_id == qdrant_id,
+        KnowledgeVersion.version == version
+    ).first()
+
+    if not version_entry:
+        raise HTTPException(status_code=404, detail="版本不存在")
+
+    return KnowledgeVersionDetailResponse(
+        id=version_entry.id,
+        qdrant_id=version_entry.qdrant_id,
+        version=version_entry.version,
+        content=version_entry.content,
+        metadata=version_entry.metadata,
+        change_type=version_entry.change_type,
+        changed_by=version_entry.changed_by,
+        change_reason=version_entry.change_reason,
+        created_at=version_entry.created_at
+    )
+
+
+@router.post("/knowledge/{qdrant_id}/rollback", response_model=RollbackResponse)
+async def rollback_knowledge(
+    qdrant_id: str,
+    data: RollbackRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """回滚知识条目到指定版本"""
+    # 获取目标版本
+    target_version = db.query(KnowledgeVersion).filter(
+        KnowledgeVersion.qdrant_id == qdrant_id,
+        KnowledgeVersion.version == data.target_version
+    ).first()
+
+    if not target_version:
+        raise HTTPException(status_code=404, detail="目标版本不存在")
+
+    # 获取当前最新版本号
+    latest_version = db.query(func.max(KnowledgeVersion.version)).filter(
+        KnowledgeVersion.qdrant_id == qdrant_id
+    ).scalar() or 0
+
+    new_version = latest_version + 1
+
+    try:
+        # 1. 更新 Qdrant 中的内容
+        from qdrant_client import QdrantClient
+        from config import QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY, QDRANT_COLLECTION_NAME, QDRANT_USE_HTTPS
+        from utils.embeddings import EmbeddingModel
+
+        protocol = "https" if QDRANT_USE_HTTPS else "http"
+        url = f"{protocol}://{QDRANT_HOST}:{QDRANT_PORT}"
+        client = QdrantClient(url=url, api_key=QDRANT_API_KEY if QDRANT_API_KEY else None)
+
+        # 重新计算嵌入
+        embedding_model = EmbeddingModel()
+        embeddings = embedding_model.encode([target_version.content])
+
+        # 更新向量
+        from qdrant_client.models import PointStruct
+        client.upsert(
+            collection_name=QDRANT_COLLECTION_NAME,
+            points=[PointStruct(
+                id=qdrant_id,
+                vector=embeddings[0].tolist(),
+                payload={
+                    "content": target_version.content,
+                    **(target_version.metadata or {})
+                }
+            )]
+        )
+
+        # 2. 创建新版本记录
+        rollback_version = KnowledgeVersion(
+            qdrant_id=qdrant_id,
+            version=new_version,
+            content=target_version.content,
+            metadata=target_version.metadata,
+            change_type='update',
+            changed_by=current_user.username,
+            change_reason=data.reason or f"回滚到版本 {data.target_version}"
+        )
+        db.add(rollback_version)
+
+        # 3. 更新 MySQL 知识条目
+        entry = db.query(KnowledgeEntry).filter(KnowledgeEntry.qdrant_id == qdrant_id).first()
+        if entry:
+            entry.content_preview = target_version.content[:500]
+
+        db.commit()
+
+        return RollbackResponse(
+            success=True,
+            message=f"已成功回滚到版本 {data.target_version}",
+            new_version=new_version,
+            qdrant_id=qdrant_id
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"回滚失败: {str(e)}")
