@@ -106,6 +106,15 @@ CONVERSATION_KEEP_RECENT_TURNS = int(os.getenv("CONVERSATION_KEEP_RECENT_TURNS",
 CONVERSATION_MAX_SUMMARY_CHARS = int(os.getenv("CONVERSATION_MAX_SUMMARY_CHARS", "1000"))  # 摘要最大字符数
 
 # ============================================================
+# 定时索引调度器配置
+# ============================================================
+SCHEDULER_ENABLE = os.getenv("SCHEDULER_ENABLE", "0").lower() in ("1", "true", "yes")  # 默认关闭
+SCHEDULER_INTERVAL_MINUTES = int(os.getenv("SCHEDULER_INTERVAL_MINUTES", "60"))  # 索引间隔（分钟）
+SCHEDULER_INDEX_CODE = os.getenv("SCHEDULER_INDEX_CODE", "1").lower() in ("1", "true", "yes")  # 是否索引代码
+SCHEDULER_INDEX_DOCS = os.getenv("SCHEDULER_INDEX_DOCS", "1").lower() in ("1", "true", "yes")  # 是否索引文档
+SCHEDULER_INDEX_ON_STARTUP = os.getenv("SCHEDULER_INDEX_ON_STARTUP", "0").lower() in ("1", "true", "yes")  # 启动时立即索引
+
+# ============================================================
 # 日志配置
 # ============================================================
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

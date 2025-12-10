@@ -50,6 +50,9 @@ python-multipart>=0.0.6
 # tree-sitter>=0.20.0
 # tree-sitter-languages>=1.7.0
 
+# 定时任务调度
+apscheduler>=3.10.0
+
 # 知识图谱
 networkx>=3.0
 

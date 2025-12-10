@@ -33,6 +33,9 @@ from admin.models import KnowledgeEntry
 from admin.database import SessionLocal
 from admin.usage_logger import log_llm_usage, estimate_tokens
 
+# 导入定时索引调度器
+from utils.scheduler import get_scheduler, start_scheduler, stop_scheduler
+
 # 导入 Agent 框架（可选）
 AGENT_AVAILABLE = False
 try:
@@ -113,10 +116,26 @@ async def startup_event():
             except Exception as agent_err:
                 logger.warning(f"Agent 框架初始化失败（非致命）: {agent_err}")
 
+        # 启动定时索引调度器
+        try:
+            start_scheduler()
+        except Exception as scheduler_err:
+            logger.warning(f"定时索引调度器启动失败（非致命）: {scheduler_err}")
+
         logger.info("RAG API 服务启动成功")
     except Exception as e:
         logger.error(f"RAG API 服务启动失败: {e}")
         raise
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """服务关闭时清理资源"""
+    try:
+        stop_scheduler()
+        logger.info("RAG API 服务已关闭")
+    except Exception as e:
+        logger.error(f"关闭服务时出错: {e}")
 
 
 class QueryRequest(BaseModel):
@@ -585,6 +604,102 @@ async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, cur
 async def health():
     """健康检查"""
     return {"status": "ok", "service": "RAG API"}
+
+
+# ===================== 调度器管理 API =====================
+
+@app.get("/admin/api/scheduler/status")
+async def scheduler_status(current_user = Depends(get_current_user)):
+    """
+    获取定时索引调度器状态（需要登录）
+
+    返回调度器的运行状态、配置信息和最近一次执行结果。
+    """
+    try:
+        scheduler = get_scheduler()
+        return scheduler.get_status()
+    except Exception as e:
+        logger.error(f"获取调度器状态失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/admin/api/scheduler/trigger")
+async def scheduler_trigger(current_user = Depends(get_current_user)):
+    """
+    手动触发一次增量索引（需要登录）
+
+    立即执行一次增量索引任务，无需等待定时器。
+    如果当前有索引任务正在执行，将返回错误。
+    """
+    try:
+        scheduler = get_scheduler()
+        result = scheduler.trigger_now()
+        return result
+    except Exception as e:
+        logger.error(f"触发索引失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/admin/api/scheduler/start")
+async def scheduler_start(current_user = Depends(get_current_user)):
+    """
+    启动定时索引调度器（需要登录）
+
+    如果调度器已在运行，将返回警告信息。
+    """
+    try:
+        scheduler = get_scheduler()
+        scheduler.start()
+        return {"success": True, "message": "调度器已启动"}
+    except Exception as e:
+        logger.error(f"启动调度器失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/admin/api/scheduler/stop")
+async def scheduler_stop(current_user = Depends(get_current_user)):
+    """
+    停止定时索引调度器（需要登录）
+
+    停止后需要手动启动才能恢复定时索引。
+    """
+    try:
+        scheduler = get_scheduler()
+        scheduler.stop()
+        return {"success": True, "message": "调度器已停止"}
+    except Exception as e:
+        logger.error(f"停止调度器失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class UpdateIntervalRequest(BaseModel):
+    """更新间隔请求"""
+    minutes: int
+
+
+@app.post("/admin/api/scheduler/interval")
+async def scheduler_update_interval(
+    request: UpdateIntervalRequest,
+    current_user = Depends(get_current_user)
+):
+    """
+    更新索引间隔时间（需要登录）
+
+    动态调整定时索引的执行间隔，无需重启服务。
+
+    Args:
+        minutes: 新的间隔时间（分钟），必须 >= 1
+    """
+    if request.minutes < 1:
+        raise HTTPException(status_code=400, detail="间隔必须大于等于 1 分钟")
+
+    try:
+        scheduler = get_scheduler()
+        scheduler.update_interval(request.minutes)
+        return {"success": True, "message": f"索引间隔已更新为 {request.minutes} 分钟"}
+    except Exception as e:
+        logger.error(f"更新索引间隔失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/")
