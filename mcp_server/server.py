@@ -116,7 +116,7 @@ def search(query_text: str, top_k: int = 5) -> str:
     """
     try:
         headers = get_auth_headers()
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=120.0) as client:
             response = client.post(
                 f"{RAG_API_BASE}/search",
                 json={"query": query_text, "top_k": top_k},
