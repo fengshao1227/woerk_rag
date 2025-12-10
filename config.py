@@ -47,9 +47,15 @@ IGNORE_PATTERNS = os.getenv("IGNORE_PATTERNS", "node_modules/**,vendor/**,storag
 # ============================================================
 # 嵌入模型配置
 # ============================================================
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+# EMBEDDING_PROVIDER: "local" 使用本地模型, "api" 使用 OpenAI 格式 API
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "local")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")  # 本地: 模型名, API: 模型ID
 EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "cpu")
-EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))  # BGE-M3 默认维度
+EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))  # BGE-M3: 1024, OpenAI: 1536/3072
+
+# API 嵌入配置（当 EMBEDDING_PROVIDER=api 时使用）
+EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", "")
+EMBEDDING_API_BASE = os.getenv("EMBEDDING_API_BASE", "https://api.openai.com")  # 支持第三方
 
 # ============================================================
 # 检索配置
