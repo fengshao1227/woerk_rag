@@ -18,7 +18,7 @@ from config import (
     QDRANT_HOST,
     QDRANT_PORT,
     QDRANT_API_KEY,
-    COLLECTION_NAME,
+    QDRANT_COLLECTION_NAME,
     EMBEDDING_DIM,
 )
 
@@ -57,7 +57,7 @@ class VectorIndexOptimizer:
             port=QDRANT_PORT,
             api_key=QDRANT_API_KEY if QDRANT_API_KEY else None,
         )
-        self.collection_name = COLLECTION_NAME
+        self.collection_name = QDRANT_COLLECTION_NAME
 
     def get_collection_info(self) -> dict:
         """获取集合信息"""

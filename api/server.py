@@ -458,7 +458,17 @@ async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, cur
         # 提取 JSON 部分
         json_match = re.search(r'\{[\s\S]*\}', llm_response_text)
         if json_match:
-            extracted_info = json.loads(json_match.group())
+            try:
+                extracted_info = json.loads(json_match.group())
+            except json.JSONDecodeError as e:
+                logger.warning(f"LLM 返回的 JSON 解析失败: {e}，使用默认值")
+                extracted_info = {
+                    "title": request.title or "未命名知识",
+                    "summary": request.content[:100],
+                    "keywords": [],
+                    "tech_stack": [],
+                    "type": request.category
+                }
         else:
             extracted_info = {
                 "title": request.title or "未命名知识",

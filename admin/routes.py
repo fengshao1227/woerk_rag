@@ -819,9 +819,10 @@ async def delete_knowledge(
         logger.warning(f"版本追踪失败: {e}")
 
     # 1. 从 Qdrant 删除向量
+    qdrant_delete_failed = False
     try:
         from qdrant_client import QdrantClient
-        from config import QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY, COLLECTION_NAME
+        from config import QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY, QDRANT_COLLECTION_NAME
 
         client = QdrantClient(
             host=QDRANT_HOST,
@@ -831,18 +832,21 @@ async def delete_knowledge(
 
         # 按 qdrant_id 删除
         client.delete(
-            collection_name=COLLECTION_NAME,
+            collection_name=QDRANT_COLLECTION_NAME,
             points_selector={"points": [qdrant_id]}
         )
         logger.info(f"已从 Qdrant 删除向量: {qdrant_id}")
     except Exception as e:
         logger.error(f"从 Qdrant 删除向量失败: {e}")
-        # 继续删除 MySQL 记录，但记录错误
+        qdrant_delete_failed = True
 
     # 2. 从 MySQL 删除
     db.delete(entry)
     db.commit()
 
+    # 返回适当的消息
+    if qdrant_delete_failed:
+        return MessageResponse(message="知识条目已从索引删除，但向量数据删除失败（可能需要手动清理）")
     return MessageResponse(message="知识条目已删除")
 
 
@@ -1512,9 +1516,13 @@ async def import_knowledge(
         from utils.embeddings import EmbeddingModel
         from config import QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY, QDRANT_COLLECTION_NAME, QDRANT_USE_HTTPS
         import hashlib
-        
+
         # 解析JSON
-        data = json.loads(file.decode('utf-8'))
+        try:
+            data = json.loads(file.decode('utf-8'))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            raise HTTPException(status_code=400, detail=f"JSON 解析失败: {str(e)}")
+
         entries = data.get('entries', [])
         
         if not entries:
