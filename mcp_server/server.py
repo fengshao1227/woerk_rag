@@ -58,7 +58,10 @@ def get_auth_token() -> str:
 def get_auth_headers() -> dict:
     """获取认证请求头"""
     token = get_auth_token()
-    return {"Authorization": f"Bearer {token}"}
+    return {
+        "Authorization": f"Bearer {token}",
+        "X-MCP-Client": "true"  # 标识这是来自 MCP 的调用
+    }
 
 
 @mcp.tool()

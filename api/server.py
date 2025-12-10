@@ -29,8 +29,9 @@ from datetime import datetime
 # 导入后台管理路由和认证
 from admin.routes import router as admin_router
 from admin.auth import get_current_user
-from admin.models import LLMUsageLog, KnowledgeEntry
+from admin.models import KnowledgeEntry
 from admin.database import SessionLocal
+from admin.usage_logger import log_llm_usage, estimate_tokens
 
 # 导入 Agent 框架（可选）
 AGENT_AVAILABLE = False
@@ -160,10 +161,14 @@ class AddKnowledgeResponse(BaseModel):
 
 
 @app.post("/query", response_model=QueryResponse)
-async def query(request: QueryRequest, current_user: dict = Depends(get_current_user)):
+async def query(request: QueryRequest, http_request: Request, current_user: dict = Depends(get_current_user)):
     """问答接口（需要登录）"""
     import time
     start_time = time.time()
+
+    # 检测是否来自 MCP 客户端
+    is_mcp = http_request.headers.get("X-MCP-Client") == "true"
+    request_type = "mcp" if is_mcp else "query"
 
     try:
         result = qa_chain.query(
@@ -175,50 +180,51 @@ async def query(request: QueryRequest, current_user: dict = Depends(get_current_
         )
 
         # 记录审计日志
-        try:
-            response_time = time.time() - start_time
-            log_entry = LLMUsageLog(
-                user_id=current_user.get("user_id"),
-                request_type="query",
-                question=request.question[:500] if request.question else None,
-                answer=result.get("answer", "")[:1000] if result.get("answer") else None,
-                sources_count=result.get("retrieved_count", 0),
-                response_time=response_time,
-                status="success"
-            )
-            with SessionLocal() as db:
-                db.add(log_entry)
-                db.commit()
-        except Exception as log_error:
-            logger.warning(f"审计日志记录失败: {log_error}")
+        total_time = time.time() - start_time
+        answer_text = result.get("answer", "")
+        log_llm_usage(
+            request_type=request_type,
+            question=request.question,
+            answer=answer_text,
+            user_id=current_user.get("user_id"),
+            username=current_user.get("username"),
+            prompt_tokens=estimate_tokens(request.question),
+            completion_tokens=estimate_tokens(answer_text),
+            total_tokens=estimate_tokens(request.question) + estimate_tokens(answer_text),
+            total_time=total_time,
+            retrieval_count=result.get("retrieved_count", 0),
+            status="success",
+            client_ip=http_request.client.host if http_request.client else None,
+            user_agent=http_request.headers.get("User-Agent")
+        )
 
         return QueryResponse(**result)
     except Exception as e:
         logger.error(f"查询失败: {e}")
         # 记录失败日志
-        try:
-            log_entry = LLMUsageLog(
-                user_id=current_user.get("user_id"),
-                request_type="query",
-                question=request.question[:500] if request.question else None,
-                status="error",
-                error_message=str(e)[:500]
-            )
-            db = SessionLocal()
-            try:
-                db.add(log_entry)
-                db.commit()
-            finally:
-                db.close()
-        except:
-            pass
+        total_time = time.time() - start_time
+        log_llm_usage(
+            request_type=request_type,
+            question=request.question,
+            user_id=current_user.get("user_id"),
+            username=current_user.get("username"),
+            total_time=total_time,
+            status="error",
+            error_message=str(e),
+            client_ip=http_request.client.host if http_request.client else None,
+            user_agent=http_request.headers.get("User-Agent")
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/query/stream")
 async def query_stream(request: QueryRequest, current_user: dict = Depends(get_current_user)):
     """流式问答接口 (SSE)（需要登录）"""
+    start_time = time.time()
+    collected_answer = []
+
     def generate():
+        nonlocal collected_answer
         try:
             for event in qa_chain.query_stream(
                 question=request.question,
@@ -227,9 +233,39 @@ async def query_stream(request: QueryRequest, current_user: dict = Depends(get_c
                 group_ids=request.group_ids,
                 use_history=request.use_history
             ):
+                # 收集回答内容
+                if event.get("type") == "answer":
+                    collected_answer.append(event.get("data", ""))
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+            # 流结束后记录日志
+            total_time = time.time() - start_time
+            answer_text = "".join(collected_answer)
+            log_llm_usage(
+                request_type="query_stream",
+                question=request.question,
+                answer=answer_text,
+                user_id=current_user.get("user_id"),
+                username=current_user.get("username"),
+                prompt_tokens=estimate_tokens(request.question),
+                completion_tokens=estimate_tokens(answer_text),
+                total_tokens=estimate_tokens(request.question) + estimate_tokens(answer_text),
+                total_time=total_time,
+                status="success"
+            )
         except Exception as e:
             logger.error(f"流式查询失败: {e}")
+            # 记录错误日志
+            total_time = time.time() - start_time
+            log_llm_usage(
+                request_type="query_stream",
+                question=request.question,
+                user_id=current_user.get("user_id"),
+                username=current_user.get("username"),
+                total_time=total_time,
+                status="error",
+                error_message=str(e)
+            )
             yield f"data: {json.dumps({'type': 'error', 'data': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -244,12 +280,14 @@ async def query_stream(request: QueryRequest, current_user: dict = Depends(get_c
 
 
 @app.post("/search")
-async def search(request: SearchRequest, current_user: dict = Depends(get_current_user)):
+async def search(request: SearchRequest, http_request: Request, current_user: dict = Depends(get_current_user)):
     """向量检索接口（需要登录）"""
     start_time = time.time()
-    success = False
-    error_msg = None
     results = []
+
+    # 检测是否来自 MCP 客户端
+    is_mcp = http_request.headers.get("X-MCP-Client") == "true"
+    request_type = "mcp" if is_mcp else "search"
 
     try:
         # 使用 qa_chain 的 retriever（HybridSearch）支持分组过滤
@@ -260,38 +298,38 @@ async def search(request: SearchRequest, current_user: dict = Depends(get_curren
             group_ids=request.group_ids,
             use_hybrid=True
         )
-        success = True
+
+        # 记录成功日志
+        total_time = time.time() - start_time
+        log_llm_usage(
+            request_type=request_type,
+            question=request.query,
+            user_id=current_user.get("user_id"),
+            username=current_user.get("username"),
+            total_time=total_time,
+            retrieval_count=len(results),
+            status="success",
+            client_ip=http_request.client.host if http_request.client else None,
+            user_agent=http_request.headers.get("User-Agent")
+        )
+
         return {"results": results, "count": len(results)}
     except Exception as e:
         logger.error(f"检索失败: {e}")
-        error_msg = str(e)[:500]
+        # 记录错误日志
+        total_time = time.time() - start_time
+        log_llm_usage(
+            request_type=request_type,
+            question=request.query,
+            user_id=current_user.get("user_id"),
+            username=current_user.get("username"),
+            total_time=total_time,
+            status="error",
+            error_message=str(e),
+            client_ip=http_request.client.host if http_request.client else None,
+            user_agent=http_request.headers.get("User-Agent")
+        )
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # 记录审计日志
-        request_time = time.time() - start_time
-        try:
-            with SessionLocal() as db:
-                usage_log = LLMUsageLog(
-                    user_id=current_user.get("user_id"),
-                    request_type="search",
-                    question=request.query[:500] if request.query else None,
-                    model_id=None,
-                    input_tokens=0,
-                    output_tokens=0,
-                    request_time=request_time,
-                    success=success,
-                    error_message=error_msg,
-                    metadata=json.dumps({
-                        "top_k": request.top_k,
-                        "result_count": len(results),
-                        "filters": request.filters,
-                        "group_ids": request.group_ids
-                    }, ensure_ascii=False) if success else None
-                )
-                db.add(usage_log)
-                db.commit()
-        except Exception as log_err:
-            logger.warning(f"记录审计日志失败: {log_err}")
 
 
 @app.post("/clear-history")
@@ -357,26 +395,20 @@ async def agent_query(request: AgentRequest, current_user: dict = Depends(get_cu
             thought_process.append(step)
 
         # 记录审计日志
-        try:
-            request_time = time.time() - start_time
-            with SessionLocal() as db:
-                usage_log = LLMUsageLog(
-                    user_id=current_user.get("user_id"),
-                    request_type="agent",
-                    question=request.question[:500] if request.question else None,
-                    answer=result.answer[:1000] if result.answer else None,
-                    request_time=request_time,
-                    success=result.success,
-                    error_message=result.error[:500] if result.error else None,
-                    metadata=json.dumps({
-                        "iterations": result.iterations,
-                        "tools_used": [ta.action for ta in result.thought_actions if ta.action]
-                    }, ensure_ascii=False)
-                )
-                db.add(usage_log)
-                db.commit()
-        except Exception as log_err:
-            logger.warning(f"记录审计日志失败: {log_err}")
+        total_time = time.time() - start_time
+        log_llm_usage(
+            request_type="agent",
+            question=request.question,
+            answer=result.answer,
+            user_id=current_user.get("user_id"),
+            username=current_user.get("username"),
+            prompt_tokens=estimate_tokens(request.question),
+            completion_tokens=estimate_tokens(result.answer or ""),
+            total_tokens=estimate_tokens(request.question) + estimate_tokens(result.answer or ""),
+            total_time=total_time,
+            status="success" if result.success else "error",
+            error_message=result.error
+        )
 
         return AgentResponse(
             success=result.success,
@@ -392,8 +424,12 @@ async def agent_query(request: AgentRequest, current_user: dict = Depends(get_cu
 
 
 @app.post("/add_knowledge", response_model=AddKnowledgeResponse)
-async def add_knowledge(request: AddKnowledgeRequest, current_user: dict = Depends(get_current_user)):
+async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, current_user: dict = Depends(get_current_user)):
     """添加知识到知识库（需要登录）"""
+    # 检测是否来自 MCP 客户端
+    is_mcp = http_request.headers.get("X-MCP-Client") == "true"
+    request_type = "mcp" if is_mcp else "add_knowledge"
+
     try:
         # 1. 用 LLM 提取关键信息
         extract_prompt = f"""请分析以下内容，提取关键信息并返回 JSON 格式：
@@ -488,18 +524,22 @@ async def add_knowledge(request: AddKnowledgeRequest, current_user: dict = Depen
                     content_preview=request.content[:500] if request.content else None
                 )
                 db.add(knowledge_entry)
-
-                # 写入审计日志
-                audit_log = LLMUsageLog(
-                    user_id=current_user.get('user_id'),
-                    request_type='add_knowledge',
-                    question=f"添加知识: {extracted_info.get('title', '未命名')}",
-                    provider_name='system',
-                    model_name='embedding',
-                    success=True
-                )
-                db.add(audit_log)
                 db.commit()
+
+                # 写入审计日志（在 MySQL 事务成功后单独记录）
+                log_llm_usage(
+                    request_type=request_type,
+                    question=f"添加知识: {extracted_info.get('title', '未命名')}",
+                    answer=llm_response[:500] if llm_response else None,
+                    user_id=current_user.get('user_id'),
+                    username=current_user.get('username'),
+                    prompt_tokens=estimate_tokens(extract_prompt),
+                    completion_tokens=estimate_tokens(llm_response),
+                    total_tokens=estimate_tokens(extract_prompt) + estimate_tokens(llm_response),
+                    status="success",
+                    client_ip=http_request.client.host if http_request.client else None,
+                    user_agent=http_request.headers.get("User-Agent")
+                )
                 logger.info(f"知识条目已同步到 MySQL: {content_hash}")
         except Exception as mysql_err:
             logger.warning(f"MySQL 写入失败（Qdrant 已写入）: {mysql_err}")
@@ -515,22 +555,16 @@ async def add_knowledge(request: AddKnowledgeRequest, current_user: dict = Depen
     except Exception as e:
         logger.error(f"添加知识失败: {e}")
         # 记录失败的审计日志
-        try:
-            db = SessionLocal()
-            audit_log = LLMUsageLog(
-                user_id=current_user.get('user_id') if current_user else None,
-                request_type='add_knowledge',
-                question=f"添加知识失败: {request.title or '未命名'}",
-                provider_name='system',
-                model_name='embedding',
-                success=False,
-                error_message=str(e)[:500]
-            )
-            db.add(audit_log)
-            db.commit()
-            db.close()
-        except:
-            pass
+        log_llm_usage(
+            request_type=request_type,
+            question=f"添加知识失败: {request.title or '未命名'}",
+            user_id=current_user.get('user_id') if current_user else None,
+            username=current_user.get('username') if current_user else None,
+            status="error",
+            error_message=str(e),
+            client_ip=http_request.client.host if http_request.client else None,
+            user_agent=http_request.headers.get("User-Agent")
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 

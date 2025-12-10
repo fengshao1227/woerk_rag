@@ -91,7 +91,7 @@ class LLMUsageLog(Base):
     username = Column(String(50), nullable=True)  # 冗余存储，防止用户删除后丢失
 
     # 请求类型
-    request_type = Column(Enum('query', 'search', 'test', 'add_knowledge', 'other'), default='query', index=True)
+    request_type = Column(Enum('query', 'query_stream', 'search', 'test', 'add_knowledge', 'agent', 'mcp', 'other'), default='query', index=True)
 
     # 请求内容（用于审计和调试）
     question = Column(Text, nullable=True)  # 用户问题
