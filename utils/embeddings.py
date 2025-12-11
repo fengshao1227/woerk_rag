@@ -10,7 +10,7 @@ from utils.logger import logger
 
 
 class APIEmbeddingModel:
-    """API 嵌入模型（OpenAI 格式）"""
+    """API 嵌入模型(OpenAI 格式)"""
 
     def __init__(self, api_key: str, base_url: str, model: str = "text-embedding-3-small"):
         self.api_key = api_key
@@ -62,7 +62,7 @@ class APIEmbeddingModel:
                 response.raise_for_status()
                 result = response.json()
 
-                # 按 index 排序（API 可能不按顺序返回）
+                # 按 index 排序(API 可能不按顺序返回)
                 embeddings_data = sorted(result["data"], key=lambda x: x["index"])
                 embeddings = [item["embedding"] for item in embeddings_data]
 
@@ -86,7 +86,7 @@ class APIEmbeddingModel:
 
 
 class LocalEmbeddingModel:
-    """本地嵌入模型（SentenceTransformer）"""
+    """本地嵌入模型(SentenceTransformer)"""
 
     def __init__(self, model_name: str, device: str = "cpu"):
         from sentence_transformers import SentenceTransformer
@@ -118,9 +118,10 @@ class LocalEmbeddingModel:
 
 
 class EmbeddingModel:
-    """嵌入模型单例（自动选择 API 或本地）"""
+    """嵌入模型单例(自动选择 API 或本地,支持热重载)"""
     _instance = None
     _model = None
+    _last_provider_id = None  # 记录上次使用的供应商ID
 
     def __new__(cls):
         if cls._instance is None:
@@ -132,33 +133,47 @@ class EmbeddingModel:
             self._model = self._create_model()
 
     def _create_model(self):
-        """根据配置创建嵌入模型（优先数据库 > 环境变量）"""
+        """根据配置创建嵌入模型(优先数据库 > 环境变量)"""
         # 1. 尝试从数据库读取默认嵌入供应商
         db_config = self._get_default_embedding_from_db()
 
         if db_config:
             logger.info(f"使用数据库配置的嵌入模型: {db_config['name']}")
+            self._last_provider_id = db_config['id']
             return APIEmbeddingModel(
                 api_key=db_config['api_key'],
                 base_url=db_config['api_base_url'],
                 model=db_config['model_name']
             )
 
-        # 2. 降级到环境变量（仅支持 API 模式）
+        # 2. 降级到环境变量(仅支持 API 模式)
         logger.warning("数据库无默认嵌入供应商,降级使用环境变量配置")
         from config import EMBEDDING_API_KEY, EMBEDDING_API_BASE, EMBEDDING_MODEL
 
         if not EMBEDDING_API_KEY:
             raise ValueError(
-                "未找到嵌入模型配置！\n"
+                "未找到嵌入模型配置!\n"
                 "请在后台管理中配置嵌入供应商,或设置环境变量: EMBEDDING_API_KEY, EMBEDDING_API_BASE, EMBEDDING_MODEL"
             )
 
+        self._last_provider_id = None
         return APIEmbeddingModel(
             api_key=EMBEDDING_API_KEY,
             base_url=EMBEDDING_API_BASE or "https://api.openai.com",
             model=EMBEDDING_MODEL or "text-embedding-3-small"
         )
+
+    def reload(self):
+        """热重载嵌入模型配置(检测数据库配置变更)"""
+        db_config = self._get_default_embedding_from_db()
+
+        # 检查供应商是否发生变化
+        new_provider_id = db_config['id'] if db_config else None
+        if new_provider_id != self._last_provider_id:
+            logger.info(f"检测到嵌入供应商变更,重新加载模型 (旧: {self._last_provider_id}, 新: {new_provider_id})")
+            self._model = self._create_model()
+            return True
+        return False
 
     def _get_default_embedding_from_db(self):
         """从数据库获取默认嵌入供应商配置"""
@@ -177,6 +192,7 @@ class EmbeddingModel:
                     return None
 
                 return {
+                    'id': provider.id,
                     'name': provider.name,
                     'api_base_url': provider.api_base_url,
                     'api_key': provider.api_key,

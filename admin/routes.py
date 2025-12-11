@@ -32,6 +32,7 @@ from admin.auth import (
 )
 import time
 from datetime import datetime, timedelta
+from utils.logger import logger
 
 router = APIRouter(prefix="/admin/api", tags=["admin"])
 
@@ -2184,7 +2185,17 @@ async def set_default_embedding_provider(
     provider.is_default = True
     db.commit()
 
-    return MessageResponse(message=f"已将 '{provider.name}' 设置为默认嵌入供应商")
+    # 触发嵌入模型热重载
+    try:
+        from utils.embeddings import get_embedding_model
+        embedding_model = get_embedding_model()
+        reloaded = embedding_model.reload()
+        if reloaded:
+            logger.info(f"已热重载嵌入模型,当前使用: {provider.name}")
+    except Exception as e:
+        logger.error(f"嵌入模型热重载失败: {e}")
+
+    return MessageResponse(message=f"已将 '{provider.name}' 设置为默认嵌入供应商,无需重启服务")
 
 
 @router.post("/embedding-providers/{provider_id}/test")
