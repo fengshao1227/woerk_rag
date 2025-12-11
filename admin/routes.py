@@ -2117,6 +2117,11 @@ async def update_embedding_provider(
 
     # 更新字段
     update_data = provider_update.dict(exclude_unset=True)
+
+    # 特殊处理: 如果 api_key 为空字符串,则不更新(保留原值)
+    if 'api_key' in update_data and not update_data['api_key']:
+        update_data.pop('api_key')
+
     for field, value in update_data.items():
         setattr(provider, field, value)
 
