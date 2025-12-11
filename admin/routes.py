@@ -1650,7 +1650,7 @@ async def list_groups(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取知识分组列表，首行为虚拟的"未分组""""
+    """获取知识分组列表，首行为虚拟的未分组"""
     groups = db.query(KnowledgeGroup).filter(KnowledgeGroup.is_active == True).order_by(KnowledgeGroup.id.desc()).all()
 
     # 计算未分组知识数量：所有不在 KnowledgeGroupItem 中的 KnowledgeEntry
