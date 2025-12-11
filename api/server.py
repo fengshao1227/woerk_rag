@@ -91,7 +91,7 @@ class AsyncLLMWrapper:
 
 
 @app.on_event("startup")
-async def startup_event():
+async def startup_event() -> None:
     """启动时初始化"""
     global qa_chain, vector_store, llm_client, embedding_model, qdrant_client, agent_instance, tool_registry
     try:
@@ -129,7 +129,7 @@ async def startup_event():
 
 
 @app.on_event("shutdown")
-async def shutdown_event():
+async def shutdown_event() -> None:
     """服务关闭时清理资源"""
     try:
         stop_scheduler()

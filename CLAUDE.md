@@ -6,6 +6,13 @@
 
 ## 变更记录 (Changelog)
 
+### 2025-12-11 13:30:00
+- **代码优化**: 删除未使用的 knowledge_graph/ 和 multimodal/ 模块
+- **工具优化**: 移除 utils/db_manager.py 和 utils/vector_optimizer.py
+- **Agent 模块**: 已启用并集成到 API 服务 (POST /agent)
+- **新增工具**: utils/error_handler.py, utils/config_manager.py
+- **文档更新**: 新增 AGENT_USAGE.md 使用指南
+
 ### 2025-12-08 23:26:20
 - 完成项目架构文档全量初始化
 - 已生成所有模块的 CLAUDE.md 文档
@@ -23,8 +30,10 @@ RAG-MCP 是一个企业级个人/项目知识库系统，旨在提供：
 - 多源数据索引能力（代码库、Markdown、PDF、知识笔记）
 - 智能混合检索（向量检索 + 关键词检索 + Reranker 重排）
 - 上下文感知问答（基于 Claude Haiku 的智能对话）
+- **ReAct Agent** (多步推理 + 工具调用)
 - Claude Desktop 集成（通过 MCP Server 无缝接入）
 - 可视化后台管理（LLM 供应商/模型管理、知识库管理、使用统计）
+- **嵌入模型热重载**（后台切换供应商无需重启服务）
 
 ## 技术栈
 
