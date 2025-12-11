@@ -97,7 +97,7 @@ export const groupAPI = {
   // 分组内知识条目管理
   listItems: id => api.get(`/groups/${id}/items`),
   addItems: (id, qdrantIds) => api.post(`/groups/${id}/items`, { qdrant_ids: qdrantIds }),
-  removeItem: (id, qdrantId) => api.delete(`/groups/${id}/items/${qdrantId}`)
+  removeItem: (id, qdrantId) => api.delete(`/groups/${id}/items`, { data: { qdrant_ids: [qdrantId] } })
 };
 
 // 版本追踪 API
