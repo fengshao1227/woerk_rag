@@ -211,3 +211,38 @@ class EmbeddingProvider(Base):
     # 时间戳
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+
+class KnowledgeTask(Base):
+    """知识添加任务表（异步队列）"""
+    __tablename__ = "knowledge_tasks"
+
+    id = Column(String(32), primary_key=True)  # MD5 hash
+    status = Column(
+        Enum('pending', 'processing', 'completed', 'failed'),
+        default='pending',
+        index=True
+    )
+
+    # 任务内容
+    content = Column(Text, nullable=False)
+    title = Column(String(255), nullable=True)
+    category = Column(String(50), default='general')
+    group_names = Column(JSON, nullable=True)  # 分组列表
+
+    # 处理结果
+    result_id = Column(String(64), nullable=True)  # 成功后的 qdrant_id
+    error_message = Column(Text, nullable=True)  # 失败原因
+
+    # 用户关联
+    user_id = Column(Integer, nullable=True, index=True)
+    username = Column(String(50), nullable=True)
+
+    # 时间戳
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('idx_status_created', 'status', 'created_at'),
+        {'mysql_charset': 'utf8mb4'},
+    )
