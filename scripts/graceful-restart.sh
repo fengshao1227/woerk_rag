@@ -20,7 +20,7 @@ echo -e "${GREEN}========== RAG API 优雅重启 ==========${NC}"
 
 # 1. 查找旧进程
 echo -e "${YELLOW}[1/6] 查找运行中的服务...${NC}"
-OLD_PIDS=$(pgrep -f "uvicorn api.server:app" || true)
+OLD_PIDS=$(pgrep -f "gunicorn.*api.server:app" || true)
 
 if [ -z "$OLD_PIDS" ]; then
     echo "✓ 没有运行中的服务"
@@ -38,7 +38,7 @@ else
     WAITED=0
     while [ $WAITED -lt $MAX_WAIT ]; do
         # 检查进程是否还存在
-        REMAINING=$(pgrep -f "uvicorn api.server:app" || true)
+        REMAINING=$(pgrep -f "gunicorn.*api.server:app" || true)
         if [ -z "$REMAINING" ]; then
             echo "✓ 所有进程已正常退出"
             break
@@ -50,11 +50,11 @@ else
     done
     echo ""
 
-    # 4. 强制杀死残留进程
-    REMAINING=$(pgrep -f "uvicorn api.server:app" || true)
+    # 4. 强制杀死残留进程（包括子进程）
+    REMAINING=$(pgrep -f "gunicorn.*api.server:app" || true)
     if [ -n "$REMAINING" ]; then
         echo -e "${RED}⚠ 进程未正常退出,强制终止...${NC}"
-        pkill -9 -f "uvicorn api.server:app" || true
+        pkill -9 -f "gunicorn.*api.server:app" || true
         sleep 2
     fi
 fi
@@ -88,12 +88,9 @@ echo -e "${YELLOW}[5/6] 启动新服务...${NC}"
 # 清空旧日志
 > $LOG_FILE
 
-# 启动服务
-nohup python -m uvicorn api.server:app \
-    --host 0.0.0.0 \
-    --port $PORT \
-    --timeout-keep-alive 120 \
-    --workers 1 \
+# 启动服务（使用 Gunicorn）
+nohup gunicorn api.server:app \
+    -c gunicorn_config.py \
     > $LOG_FILE 2>&1 &
 
 NEW_PID=$!
