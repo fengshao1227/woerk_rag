@@ -173,6 +173,7 @@ class AddKnowledgeRequest(BaseModel):
     content: str
     title: Optional[str] = None
     category: Optional[str] = "general"  # 分类：project, skill, experience, note 等
+    group_names: Optional[List[str]] = None  # 添加后自动加入这些分组
 
 
 class AddKnowledgeResponse(BaseModel):
@@ -590,6 +591,23 @@ async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, cur
                 )
                 db.add(knowledge_entry)
                 db.commit()
+
+                # 7. 如果指定了分组，自动添加到分组
+                if request.group_names:
+                    from admin.models import KnowledgeGroupItem
+                    groups = db.query(KnowledgeGroup).filter(
+                        KnowledgeGroup.name.in_(request.group_names),
+                        KnowledgeGroup.is_active == True
+                    ).all()
+                    for group in groups:
+                        group_item = KnowledgeGroupItem(
+                            group_id=group.id,
+                            qdrant_id=content_hash
+                        )
+                        db.add(group_item)
+                    if groups:
+                        db.commit()
+                        logger.info(f"知识已添加到分组: {[g.name for g in groups]}")
 
                 # 写入审计日志（使用上游返回的真实 token 数据）
                 log_llm_usage(
