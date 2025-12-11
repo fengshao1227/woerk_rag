@@ -109,9 +109,21 @@ export default function Groups() {
       setGroupItems(currentItems || []);
       setTransferTargetKeys((currentItems || []).map(item => item.qdrant_id));
 
-      // 加载所有知识条目
-      const { data: knowledgeData } = await knowledgeAPI.list(1, 100, null, null);
-      setAllKnowledge(knowledgeData.items || []);
+      // 分页加载所有知识条目
+      let allKnowledge = [];
+      let page = 1;
+      const pageSize = 100;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data: knowledgeData } = await knowledgeAPI.list(page, pageSize, null, null);
+        const items = knowledgeData.items || [];
+        allKnowledge = [...allKnowledge, ...items];
+        hasMore = items.length === pageSize && allKnowledge.length < knowledgeData.total;
+        page++;
+      }
+
+      setAllKnowledge(allKnowledge);
     } catch (error) {
       message.error('加载数据失败');
     } finally {
