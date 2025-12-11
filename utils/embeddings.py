@@ -132,25 +132,62 @@ class EmbeddingModel:
             self._model = self._create_model()
 
     def _create_model(self):
-        """根据配置创建嵌入模型"""
-        from config import (
-            EMBEDDING_PROVIDER, EMBEDDING_MODEL, EMBEDDING_DEVICE,
-            EMBEDDING_API_KEY, EMBEDDING_API_BASE
+        """根据配置创建嵌入模型（优先数据库 > 环境变量）"""
+        # 1. 尝试从数据库读取默认嵌入供应商
+        db_config = self._get_default_embedding_from_db()
+
+        if db_config:
+            logger.info(f"使用数据库配置的嵌入模型: {db_config['name']}")
+            return APIEmbeddingModel(
+                api_key=db_config['api_key'],
+                base_url=db_config['api_base_url'],
+                model=db_config['model_name']
+            )
+
+        # 2. 降级到环境变量（仅支持 API 模式）
+        logger.warning("数据库无默认嵌入供应商,降级使用环境变量配置")
+        from config import EMBEDDING_API_KEY, EMBEDDING_API_BASE, EMBEDDING_MODEL
+
+        if not EMBEDDING_API_KEY:
+            raise ValueError(
+                "未找到嵌入模型配置！\n"
+                "请在后台管理中配置嵌入供应商,或设置环境变量: EMBEDDING_API_KEY, EMBEDDING_API_BASE, EMBEDDING_MODEL"
+            )
+
+        return APIEmbeddingModel(
+            api_key=EMBEDDING_API_KEY,
+            base_url=EMBEDDING_API_BASE or "https://api.openai.com",
+            model=EMBEDDING_MODEL or "text-embedding-3-small"
         )
 
-        if EMBEDDING_PROVIDER == "api":
-            if not EMBEDDING_API_KEY:
-                raise ValueError("使用 API 嵌入时必须设置 EMBEDDING_API_KEY")
-            return APIEmbeddingModel(
-                api_key=EMBEDDING_API_KEY,
-                base_url=EMBEDDING_API_BASE,
-                model=EMBEDDING_MODEL
-            )
-        else:
-            return LocalEmbeddingModel(
-                model_name=EMBEDDING_MODEL,
-                device=EMBEDDING_DEVICE
-            )
+    def _get_default_embedding_from_db(self):
+        """从数据库获取默认嵌入供应商配置"""
+        try:
+            from admin.database import SessionLocal
+            from admin.models import EmbeddingProvider
+
+            db = SessionLocal()
+            try:
+                provider = db.query(EmbeddingProvider).filter(
+                    EmbeddingProvider.is_default == True,
+                    EmbeddingProvider.is_active == True
+                ).first()
+
+                if not provider:
+                    return None
+
+                return {
+                    'name': provider.name,
+                    'api_base_url': provider.api_base_url,
+                    'api_key': provider.api_key,
+                    'model_name': provider.model_name,
+                    'embedding_dim': provider.embedding_dim
+                }
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"从数据库获取嵌入配置失败: {e}")
+            return None
 
     @property
     def model(self):

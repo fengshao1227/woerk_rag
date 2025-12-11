@@ -11,6 +11,7 @@ import UsageStats from './pages/UsageStats';
 import Chat from './pages/Chat';
 import Agent from './pages/Agent';
 import Evaluation from './pages/Evaluation';
+import EmbeddingProviders from './pages/EmbeddingProviders';
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="channels" element={<Channels />} />
+            <Route path="embedding-providers" element={<EmbeddingProviders />} />
             <Route path="knowledge" element={<Knowledge />} />
             <Route path="groups" element={<Groups />} />
             <Route path="usage" element={<UsageStats />} />

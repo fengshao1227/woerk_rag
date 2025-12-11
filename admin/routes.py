@@ -8,7 +8,7 @@ from typing import List, Optional
 from datetime import timedelta
 
 from admin.database import get_db
-from admin.models import User, LLMProvider, LLMModel, KnowledgeEntry, LLMUsageLog, KnowledgeGroup, KnowledgeGroupItem, KnowledgeVersion
+from admin.models import User, LLMProvider, LLMModel, KnowledgeEntry, LLMUsageLog, KnowledgeGroup, KnowledgeGroupItem, KnowledgeVersion, EmbeddingProvider
 from admin.schemas import (
     LoginRequest, TokenResponse, UserResponse,
     ProviderCreate, ProviderUpdate, ProviderResponse,
@@ -23,7 +23,8 @@ from admin.schemas import (
     GroupItemsRequest, GroupItemResponse,
     KnowledgeVersionResponse, KnowledgeVersionDetailResponse, KnowledgeVersionListResponse,
     RollbackRequest, RollbackResponse,
-    RemoteModelItem, RemoteModelsResponse, BalanceResponse, BatchModelCreate, BatchModelResponse
+    RemoteModelItem, RemoteModelsResponse, BalanceResponse, BatchModelCreate, BatchModelResponse,
+    EmbeddingProviderCreate, EmbeddingProviderUpdate, EmbeddingProviderResponse, TestEmbeddingRequest
 )
 from admin.auth import (
     authenticate_user, create_access_token, get_current_user,
@@ -1990,3 +1991,249 @@ async def rollback_knowledge(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"回滚失败: {str(e)}")
+
+
+# ============================================================
+# 嵌入供应商管理
+# ============================================================
+
+@router.get("/embedding-providers", response_model=List[EmbeddingProviderResponse])
+async def list_embedding_providers(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取所有嵌入供应商列表"""
+    providers = db.query(EmbeddingProvider).all()
+
+    return [
+        EmbeddingProviderResponse(
+            id=p.id,
+            name=p.name,
+            api_base_url=p.api_base_url,
+            api_key_masked=mask_api_key(p.api_key),
+            model_name=p.model_name,
+            embedding_dim=p.embedding_dim,
+            max_batch_size=p.max_batch_size,
+            request_timeout=p.request_timeout,
+            is_active=p.is_active,
+            is_default=p.is_default,
+            monthly_budget=p.monthly_budget,
+            current_usage=float(p.current_usage),
+            created_at=p.created_at,
+            updated_at=p.updated_at
+        )
+        for p in providers
+    ]
+
+
+@router.post("/embedding-providers", response_model=EmbeddingProviderResponse)
+async def create_embedding_provider(
+    provider: EmbeddingProviderCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """创建嵌入供应商"""
+    # 检查供应商名称是否已存在
+    existing = db.query(EmbeddingProvider).filter(EmbeddingProvider.name == provider.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"供应商名称 '{provider.name}' 已存在")
+
+    # 创建新供应商
+    new_provider = EmbeddingProvider(
+        name=provider.name,
+        api_base_url=provider.api_base_url,
+        api_key=provider.api_key,
+        model_name=provider.model_name,
+        embedding_dim=provider.embedding_dim,
+        max_batch_size=provider.max_batch_size,
+        request_timeout=provider.request_timeout,
+        monthly_budget=provider.monthly_budget,
+        is_active=True,
+        is_default=False
+    )
+
+    db.add(new_provider)
+    db.commit()
+    db.refresh(new_provider)
+
+    return EmbeddingProviderResponse(
+        id=new_provider.id,
+        name=new_provider.name,
+        api_base_url=new_provider.api_base_url,
+        api_key_masked=mask_api_key(new_provider.api_key),
+        model_name=new_provider.model_name,
+        embedding_dim=new_provider.embedding_dim,
+        max_batch_size=new_provider.max_batch_size,
+        request_timeout=new_provider.request_timeout,
+        is_active=new_provider.is_active,
+        is_default=new_provider.is_default,
+        monthly_budget=new_provider.monthly_budget,
+        current_usage=float(new_provider.current_usage),
+        created_at=new_provider.created_at,
+        updated_at=new_provider.updated_at
+    )
+
+
+@router.get("/embedding-providers/{provider_id}", response_model=EmbeddingProviderResponse)
+async def get_embedding_provider(
+    provider_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取嵌入供应商详情"""
+    provider = db.query(EmbeddingProvider).filter(EmbeddingProvider.id == provider_id).first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="供应商不存在")
+
+    return EmbeddingProviderResponse(
+        id=provider.id,
+        name=provider.name,
+        api_base_url=provider.api_base_url,
+        api_key_masked=mask_api_key(provider.api_key),
+        model_name=provider.model_name,
+        embedding_dim=provider.embedding_dim,
+        max_batch_size=provider.max_batch_size,
+        request_timeout=provider.request_timeout,
+        is_active=provider.is_active,
+        is_default=provider.is_default,
+        monthly_budget=provider.monthly_budget,
+        current_usage=float(provider.current_usage),
+        created_at=provider.created_at,
+        updated_at=provider.updated_at
+    )
+
+
+@router.put("/embedding-providers/{provider_id}", response_model=EmbeddingProviderResponse)
+async def update_embedding_provider(
+    provider_id: int,
+    provider_update: EmbeddingProviderUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """更新嵌入供应商"""
+    provider = db.query(EmbeddingProvider).filter(EmbeddingProvider.id == provider_id).first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="供应商不存在")
+
+    # 更新字段
+    update_data = provider_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(provider, field, value)
+
+    db.commit()
+    db.refresh(provider)
+
+    return EmbeddingProviderResponse(
+        id=provider.id,
+        name=provider.name,
+        api_base_url=provider.api_base_url,
+        api_key_masked=mask_api_key(provider.api_key),
+        model_name=provider.model_name,
+        embedding_dim=provider.embedding_dim,
+        max_batch_size=provider.max_batch_size,
+        request_timeout=provider.request_timeout,
+        is_active=provider.is_active,
+        is_default=provider.is_default,
+        monthly_budget=provider.monthly_budget,
+        current_usage=float(provider.current_usage),
+        created_at=provider.created_at,
+        updated_at=provider.updated_at
+    )
+
+
+@router.delete("/embedding-providers/{provider_id}")
+async def delete_embedding_provider(
+    provider_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """删除嵌入供应商"""
+    provider = db.query(EmbeddingProvider).filter(EmbeddingProvider.id == provider_id).first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="供应商不存在")
+
+    if provider.is_default:
+        raise HTTPException(status_code=400, detail="无法删除默认供应商,请先设置其他供应商为默认")
+
+    db.delete(provider)
+    db.commit()
+
+    return MessageResponse(message=f"供应商 '{provider.name}' 已删除")
+
+
+@router.post("/embedding-providers/{provider_id}/set-default")
+async def set_default_embedding_provider(
+    provider_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """设置默认嵌入供应商"""
+    provider = db.query(EmbeddingProvider).filter(EmbeddingProvider.id == provider_id).first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="供应商不存在")
+
+    # 取消其他供应商的默认标记
+    db.query(EmbeddingProvider).update({"is_default": False})
+
+    # 设置当前供应商为默认
+    provider.is_default = True
+    db.commit()
+
+    return MessageResponse(message=f"已将 '{provider.name}' 设置为默认嵌入供应商")
+
+
+@router.post("/embedding-providers/{provider_id}/test")
+async def test_embedding_provider(
+    provider_id: int,
+    request: TestEmbeddingRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """测试嵌入供应商"""
+    provider = db.query(EmbeddingProvider).filter(EmbeddingProvider.id == provider_id).first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="供应商不存在")
+
+    try:
+        import httpx
+
+        start_time = time.time()
+
+        # 调用嵌入 API
+        async with httpx.AsyncClient(timeout=provider.request_timeout) as client:
+            response = await client.post(
+                f"{provider.api_base_url}/v1/embeddings",
+                headers={
+                    "Authorization": f"Bearer {provider.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": provider.model_name,
+                    "input": request.text
+                }
+            )
+            response.raise_for_status()
+            result = response.json()
+
+        elapsed = time.time() - start_time
+
+        # 获取向量
+        embedding = result.get("data", [{}])[0].get("embedding", [])
+
+        return {
+            "success": True,
+            "message": "嵌入测试成功",
+            "provider_name": provider.name,
+            "model_name": provider.model_name,
+            "embedding_dim": len(embedding),
+            "request_time": round(elapsed, 3),
+            "sample_vector": embedding[:10] if len(embedding) > 10 else embedding
+        }
+
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"API 请求失败 ({e.response.status_code}): {e.response.text}"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"测试失败: {str(e)}")

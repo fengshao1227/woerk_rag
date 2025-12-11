@@ -181,3 +181,33 @@ class KnowledgeVersion(Base):
     __table_args__ = (
         {'mysql_charset': 'utf8mb4'},
     )
+
+
+class EmbeddingProvider(Base):
+    """嵌入模型供应商表"""
+    __tablename__ = "embedding_providers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+
+    # API配置
+    api_base_url = Column(String(500), nullable=False)
+    api_key = Column(String(500), nullable=False)
+    model_name = Column(String(100), nullable=False)
+
+    # 配置参数
+    embedding_dim = Column(Integer, default=1024)
+    max_batch_size = Column(Integer, default=32)
+    request_timeout = Column(Integer, default=30)
+
+    # 状态管理
+    is_active = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False, index=True)
+
+    # 监控统计
+    monthly_budget = Column(DECIMAL(10, 2), nullable=True)
+    current_usage = Column(DECIMAL(10, 2), default=0)
+
+    # 时间戳
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())

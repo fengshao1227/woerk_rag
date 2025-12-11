@@ -495,3 +495,56 @@ class BatchModelResponse(BaseModel):
     skipped_models: List[str] = []  # 已存在被跳过的模型ID
     message: str
 
+
+# ==================== 嵌入供应商管理 ====================
+
+class EmbeddingProviderCreate(BaseModel):
+    """创建嵌入供应商请求"""
+    name: str = Field(..., min_length=1, max_length=100, description="供应商名称")
+    api_base_url: str = Field(..., min_length=1, max_length=500, description="API地址")
+    api_key: str = Field(..., min_length=1, max_length=500, description="API密钥")
+    model_name: str = Field(..., min_length=1, max_length=100, description="模型名称")
+    embedding_dim: int = Field(default=1024, ge=1, le=8192, description="向量维度")
+    max_batch_size: int = Field(default=32, ge=1, le=512, description="批处理大小")
+    request_timeout: int = Field(default=30, ge=1, le=300, description="请求超时(秒)")
+    monthly_budget: Optional[float] = Field(default=None, ge=0, description="月度预算")
+
+
+class EmbeddingProviderUpdate(BaseModel):
+    """更新嵌入供应商请求"""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    api_base_url: Optional[str] = Field(None, min_length=1, max_length=500)
+    api_key: Optional[str] = Field(None, min_length=1, max_length=500)
+    model_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    embedding_dim: Optional[int] = Field(None, ge=1, le=8192)
+    max_batch_size: Optional[int] = Field(None, ge=1, le=512)
+    request_timeout: Optional[int] = Field(None, ge=1, le=300)
+    is_active: Optional[bool] = None
+    monthly_budget: Optional[float] = Field(None, ge=0)
+
+
+class EmbeddingProviderResponse(BaseModel):
+    """嵌入供应商响应"""
+    id: int
+    name: str
+    api_base_url: str
+    api_key_masked: str  # 脱敏显示
+    model_name: str
+    embedding_dim: int
+    max_batch_size: int
+    request_timeout: int
+    is_active: bool
+    is_default: bool
+    monthly_budget: Optional[float]
+    current_usage: float
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TestEmbeddingRequest(BaseModel):
+    """测试嵌入请求"""
+    text: str = Field(default="测试文本", min_length=1, max_length=5000, description="测试文本内容")
+

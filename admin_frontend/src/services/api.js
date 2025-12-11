@@ -181,5 +181,15 @@ export const agentAPI = {
   query: (question) => ragApi.post('/agent', { question }, { timeout: 120000 })
 };
 
+export const embeddingProviderAPI = {
+  list: () => api.get('/embedding-providers'),
+  create: (data) => api.post('/embedding-providers', data),
+  get: (id) => api.get(`/embedding-providers/${id}`),
+  update: (id, data) => api.put(`/embedding-providers/${id}`, data),
+  delete: (id) => api.delete(`/embedding-providers/${id}`),
+  setDefault: (id) => api.post(`/embedding-providers/${id}/set-default`),
+  test: (id, text) => api.post(`/embedding-providers/${id}/test`, { text })
+};
+
 export { ragApi };
 export default api;
