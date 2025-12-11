@@ -81,11 +81,21 @@ class SemanticCache:
         self.cleanup_interval = cleanup_interval
 
         # 初始化 Qdrant 客户端
-        self.client = QdrantClient(
-            host=QDRANT_HOST,
-            port=QDRANT_PORT,
-            api_key=QDRANT_API_KEY if QDRANT_API_KEY else None
-        )
+        # 判断是否使用 HTTPS
+        if QDRANT_HOST.startswith('http://') or QDRANT_HOST.startswith('https://'):
+            # 如果 host 包含协议，直接使用 URL 模式
+            self.client = QdrantClient(
+                url=f"{QDRANT_HOST}:{QDRANT_PORT}" if not QDRANT_HOST.startswith('http') else QDRANT_HOST,
+                api_key=QDRANT_API_KEY if QDRANT_API_KEY else None
+            )
+        else:
+            # 否则使用 host/port 模式
+            self.client = QdrantClient(
+                host=QDRANT_HOST,
+                port=QDRANT_PORT,
+                api_key=QDRANT_API_KEY if QDRANT_API_KEY else None,
+                https=False  # 明确禁用 HTTPS
+            )
 
         self._init_collection()
 
