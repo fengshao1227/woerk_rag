@@ -13,6 +13,18 @@ from config import (
 from utils.logger import logger
 
 
+def normalize_uuid(uuid_str: str) -> str:
+    """
+    标准化 UUID 格式，去除连字符，转为小写
+
+    由于历史数据中 qdrant_id 格式不一致（有的带连字符，有的不带），
+    统一转换为不带连字符的32字符格式进行比较
+    """
+    if not uuid_str:
+        return ""
+    return uuid_str.replace("-", "").lower()
+
+
 def get_group_qdrant_ids(group_ids: List[int]) -> List[str]:
     """
     根据分组ID列表获取所有关联的qdrant_id
@@ -35,7 +47,8 @@ def get_group_qdrant_ids(group_ids: List[int]) -> List[str]:
             items = db.query(KnowledgeGroupItem.qdrant_id).filter(
                 KnowledgeGroupItem.group_id.in_(group_ids)
             ).all()
-            return [item[0] for item in items]
+            # 标准化 UUID 格式，解决历史数据格式不一致问题
+            return [normalize_uuid(item[0]) for item in items]
         finally:
             db.close()
     except Exception as e:
@@ -286,7 +299,8 @@ class HybridSearch:
             if allowed_qdrant_ids:
                 # result_id 可能是 qdrant_id 或 file_path:chunk_index 格式
                 qdrant_id = result.get("id") or result_id.split(":")[0] if ":" in result_id else result_id
-                if qdrant_id not in allowed_qdrant_ids:
+                # 标准化 UUID 格式后再比较，解决历史数据格式不一致问题
+                if normalize_uuid(qdrant_id) not in allowed_qdrant_ids:
                     continue
 
             # 多查询命中加分
