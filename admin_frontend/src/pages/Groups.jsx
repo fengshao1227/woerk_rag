@@ -46,7 +46,7 @@ export default function Groups() {
     setLoading(true);
     try {
       const { data } = await groupAPI.list(true);
-      setGroups(data.groups || []);
+      setGroups(data.items || []);
     } catch (error) {
       message.error('加载分组失败');
     } finally {
