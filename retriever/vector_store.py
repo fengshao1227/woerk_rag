@@ -71,6 +71,7 @@ class VectorStore:
             formatted_results = []
             for result in results.points:
                 formatted_results.append({
+                    "id": str(result.id),  # 添加 Qdrant point ID，用于分组过滤
                     "content": result.payload.get("content", ""),
                     "file_path": result.payload.get("file_path", ""),
                     "type": result.payload.get("type", ""),
