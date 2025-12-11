@@ -181,11 +181,16 @@ class QAChatChain:
         Returns:
             包含答案和检索结果的字典
         """
-        # 1. 检查语义缓存（仅在没有分组过滤时使用缓存）
-        if use_cache and self.semantic_cache and not group_ids:
-            cached = self.semantic_cache.get(question)
+        # 1. 检查语义缓存（支持分组过滤）
+        cache_key = question
+        if group_ids:
+            # 将分组信息加入缓存键，确保不同分组的查询不会混淆
+            cache_key = f"{question}||groups:{','.join(sorted(group_ids))}"
+
+        if use_cache and self.semantic_cache:
+            cached = self.semantic_cache.get(cache_key)
             if cached:
-                logger.info(f"语义缓存命中: {question[:50]}...")
+                logger.info(f"语义缓存命中: {question[:50]}..." + (f" [分组: {group_ids}]" if group_ids else ""))
                 return {
                     "answer": cached["answer"],
                     "sources": cached.get("sources", []),
@@ -270,9 +275,9 @@ class QAChatChain:
                 }
             }
 
-            # 3. 存入语义缓存
+            # 3. 存入语义缓存（使用相同的缓存键）
             if use_cache and self.semantic_cache:
-                self.semantic_cache.set(question, response)
+                self.semantic_cache.set(cache_key, response)
 
             return response
 
@@ -338,11 +343,15 @@ class QAChatChain:
             - {"type": "chunk", "data": "..."}    答案片段
             - {"type": "done", "data": "..."}     完整答案
         """
-        # 检查语义缓存（仅在没有分组过滤时使用缓存）
-        if self.semantic_cache and not group_ids:
-            cached = self.semantic_cache.get(question)
+        # 检查语义缓存（支持分组过滤）
+        cache_key = question
+        if group_ids:
+            cache_key = f"{question}||groups:{','.join(sorted(group_ids))}"
+
+        if self.semantic_cache:
+            cached = self.semantic_cache.get(cache_key)
             if cached:
-                logger.info(f"语义缓存命中: {question[:50]}...")
+                logger.info(f"语义缓存命中: {question[:50]}..." + (f" [分组: {group_ids}]" if group_ids else ""))
                 yield {"type": "sources", "data": cached.get("sources", [])}
                 # 模拟流式输出缓存的答案
                 answer = cached["answer"]
@@ -400,10 +409,10 @@ class QAChatChain:
                 self.conversation_history.append({"role": "user", "content": question})
                 self.conversation_history.append({"role": "assistant", "content": full_answer})
 
-            # 存入语义缓存
+            # 存入语义缓存（使用相同的缓存键）
             if self.semantic_cache and full_answer:
                 try:
-                    self.semantic_cache.set(question, full_answer, sources)
+                    self.semantic_cache.set(cache_key, full_answer, sources)
                 except Exception as cache_err:
                     logger.warning(f"语义缓存存储失败: {cache_err}")
 
