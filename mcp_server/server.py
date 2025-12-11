@@ -65,23 +65,28 @@ def get_auth_headers() -> dict:
 
 
 @mcp.tool()
-def query(question: str, top_k: int = 5) -> str:
+def query(question: str, top_k: int = 5, group_names: Optional[str] = None) -> str:
     """
     RAG 问答:基于知识库回答问题
 
     Args:
         question: 要询问的问题
         top_k: 检索的相关文档数量,默认5
+        group_names: 可选的分组名称,多个用逗号分隔,如"fm,项目A",限定在指定分组中检索
 
     Returns:
         包含答案和来源的回复
     """
     try:
         headers = get_auth_headers()
+
+        # 解析分组名称
+        groups = [g.strip() for g in group_names.split(",")] if group_names else None
+
         with httpx.Client(timeout=60.0) as client:
             response = client.post(
                 f"{RAG_API_BASE}/query",
-                json={"question": question, "top_k": top_k},
+                json={"question": question, "top_k": top_k, "group_names": groups},
                 headers=headers
             )
             response.raise_for_status()
@@ -106,23 +111,28 @@ def query(question: str, top_k: int = 5) -> str:
 
 
 @mcp.tool()
-def search(query_text: str, top_k: int = 5) -> str:
+def search(query_text: str, top_k: int = 5, group_names: Optional[str] = None) -> str:
     """
     向量检索:搜索知识库中的相关内容
 
     Args:
         query_text: 搜索查询文本
         top_k: 返回结果数量,默认5
+        group_names: 可选的分组名称,多个用逗号分隔,如"fm,项目A",限定在指定分组中检索
 
     Returns:
         匹配的知识条目列表
     """
     try:
         headers = get_auth_headers()
+
+        # 解析分组名称
+        groups = [g.strip() for g in group_names.split(",")] if group_names else None
+
         with httpx.Client(timeout=120.0) as client:
             response = client.post(
                 f"{RAG_API_BASE}/search",
-                json={"query": query_text, "top_k": top_k},
+                json={"query": query_text, "top_k": top_k, "group_names": groups},
                 headers=headers
             )
             response.raise_for_status()
