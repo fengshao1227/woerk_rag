@@ -104,11 +104,10 @@ export default function Groups() {
     setItemsModalOpen(true);
 
     try {
-      // 加载当前分组条目
-      const { data: itemsData } = await groupAPI.listItems(group.id);
-      const currentItems = itemsData.items || [];
-      setGroupItems(currentItems);
-      setTransferTargetKeys(currentItems.map(item => item.qdrant_id));
+      // 加载当前分组条目（后端返回数组）
+      const { data: currentItems } = await groupAPI.listItems(group.id);
+      setGroupItems(currentItems || []);
+      setTransferTargetKeys((currentItems || []).map(item => item.qdrant_id));
 
       // 加载所有知识条目
       const { data: knowledgeData } = await knowledgeAPI.list(1, 500, null, null);
