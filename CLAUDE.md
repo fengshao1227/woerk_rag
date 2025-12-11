@@ -270,19 +270,166 @@ curl -X POST http://localhost:8000/query \
    - 使用 CLI 模式进行交互式问答
    - 通过 API 集成到其他工具
 
-## 部署
+## 部署规范
+
+### ⚠️ 重要部署规则
+
+**AI 助手必读:** 每次代码更新后,必须按照以下流程部署,严禁手动 SSH 操作!
+
+#### 部署服务器信息
+- **服务器**: ljf@34.180.100.55
+- **项目目录**: ~/rag
+- **API地址**: https://rag.litxczv.shop
+- **管理后台**: https://rag.litxczv.shop/admin
+
+### 🚀 标准部署流程(自动化)
+
+**每次代码更新后,使用以下命令:**
+
+```bash
+./scripts/quick-deploy-new.sh "你的提交信息"
+```
+
+**该脚本会自动完成:**
+1. ✅ 提交本地更改到 Git
+2. ✅ 推送到 GitHub
+3. ✅ SSH 登录服务器
+4. ✅ 拉取最新代码
+5. ✅ 优雅重启服务(零端口冲突)
+6. ✅ 健康检查验证
+
+**示例:**
+```bash
+# 功能更新
+./scripts/quick-deploy-new.sh "feat: 添加用户认证功能"
+
+# Bug 修复
+./scripts/quick-deploy-new.sh "fix: 修复向量检索错误"
+
+# 不指定消息(使用默认)
+./scripts/quick-deploy-new.sh
+```
+
+### 🛠️ 仅重启服务(无代码更改)
+
+如果只需要重启服务(例如配置变更):
+
+```bash
+ssh ljf@34.180.100.55 "cd ~/rag && bash scripts/graceful-restart.sh"
+```
+
+### ⚙️ 优雅重启机制
+
+`graceful-restart.sh` 脚本彻底解决了端口冲突问题:
+
+1. **优雅关闭**: 发送 SIGTERM 信号,等待最多30秒
+2. **强制清理**: 如未退出,使用 kill -9
+3. **端口确认**: 确保端口 8000 完全释放
+4. **启动服务**: 启动新的 uvicorn 进程
+5. **健康检查**: 自动验证服务状态
+6. **日志输出**: 显示启动日志和错误信息
+
+### 🚫 禁止的部署方式
+
+**以下方式会导致端口冲突和500错误:**
+
+```bash
+# ❌ 错误示例 1: 直接 pkill + 立即启动
+pkill -f uvicorn
+uvicorn api.server:app ...  # 端口可能还未释放!
+
+# ❌ 错误示例 2: sleep 时间不够
+pkill -f uvicorn
+sleep 2  # 不够!进程可能还在退出
+uvicorn api.server:app ...
+
+# ❌ 错误示例 3: 手动 SSH 操作
+ssh ljf@34.180.100.55
+git pull
+pkill uvicorn
+nohup uvicorn ...  # 容易出错!
+```
+
+### 📊 部署状态检查
+
+```bash
+# 检查服务状态
+curl https://rag.litxczv.shop/health
+
+# 查看服务进程
+ssh ljf@34.180.100.55 "ps aux | grep uvicorn"
+
+# 查看最近日志
+ssh ljf@34.180.100.55 "tail -50 ~/rag/server.log"
+```
+
+### 🔧 故障排查
+
+#### 问题1: 部署后 500 错误
+
+**原因**: 端口冲突或服务启动失败
+
+**排查步骤:**
+```bash
+# 1. 查看日志
+ssh ljf@34.180.100.55 "tail -100 ~/rag/server.log"
+
+# 2. 强制重启
+ssh ljf@34.180.100.55 "pkill -9 -f uvicorn; cd ~/rag && bash scripts/graceful-restart.sh"
+
+# 3. 检查端口占用
+ssh ljf@34.180.100.55 "netstat -tlnp | grep :8000"
+```
+
+#### 问题2: 配置未生效
+
+**原因**: 服务启动时会缓存数据库配置
+
+**解决**: 重启服务即可
+```bash
+ssh ljf@34.180.100.55 "cd ~/rag && bash scripts/graceful-restart.sh"
+```
+
+#### 问题3: 健康检查失败
+
+**排查顺序:**
+1. 检查 Qdrant 是否运行
+2. 检查 MySQL 连接
+3. 检查环境变量配置
+4. 查看完整错误日志
+
+### 📝 部署 Checklist
+
+每次部署前确认:
+
+- [ ] 代码已在本地测试通过
+- [ ] 没有敏感信息(API Key 等)硬编码
+- [ ] 数据库迁移已执行(如有)
+- [ ] 环境变量配置正确
+- [ ] 使用 `quick-deploy-new.sh` 脚本部署
+- [ ] 部署后进行健康检查
+- [ ] 验证核心功能正常
+
+### 🎯 AI 助手部署规则
+
+**当用户说"部署"、"更新服务器"、"上线"等关键词时:**
+
+1. **首选方案**: 使用 `./scripts/quick-deploy-new.sh`
+2. **提交信息**: 根据本次修改内容生成有意义的 commit message
+3. **自动验证**: 脚本会自动进行健康检查
+4. **失败处理**: 如果部署失败,自动查看日志并报告错误
+
+**禁止直接执行:**
+- 禁止手动 SSH + git pull + 手动重启
+- 禁止使用 `pkill -9` 而不确认端口释放
+- 禁止跳过健康检查
 
 ### 本地开发
 ```bash
 ./scripts/start_api.sh
 ```
 
-### 生产部署
-```bash
-./scripts/deploy.sh
-```
-
-### Docker 部署
+### Docker 部署(可选)
 ```bash
 # 启动 Qdrant
 docker run -d -p 6333:6333 qdrant/qdrant
