@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Input, Button, Card, Spin, Empty, Tag, Collapse, Switch, Tooltip, Popover } from 'antd';
-import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, ThunderboltOutlined, LinkOutlined } from '@ant-design/icons';
-import { chatAPI } from '../services/api';
+import { Input, Button, Card, Spin, Empty, Tag, Collapse, Switch, Tooltip, Popover, Select } from 'antd';
+import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, ThunderboltOutlined, LinkOutlined, FolderOutlined } from '@ant-design/icons';
+import { chatAPI, groupAPI } from '../services/api';
 
 const { TextArea } = Input;
 
@@ -107,9 +107,24 @@ export default function Chat() {
   const [loading, setLoading] = useState(false);
   const [streamMode, setStreamMode] = useState(true);
   const [activeSourceIndex, setActiveSourceIndex] = useState(null);  // 当前高亮的来源索引
+  const [groups, setGroups] = useState([]);  // 知识分组列表
+  const [selectedGroupIds, setSelectedGroupIds] = useState([]);  // 选中的分组ID
   const messagesEndRef = useRef(null);
   const abortControllerRef = useRef(null);
   const sourceRefs = useRef({});  // 来源元素的引用
+
+  // 加载分组列表
+  useEffect(() => {
+    const loadGroups = async () => {
+      try {
+        const { data } = await groupAPI.list(false);
+        setGroups(data.items || []);
+      } catch (error) {
+        console.error('加载分组失败:', error);
+      }
+    };
+    loadGroups();
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -157,7 +172,8 @@ export default function Chat() {
     setMessages(prev => [...prev, initialAssistantMessage]);
 
     try {
-      for await (const event of chatAPI.queryStream(question, 5, true)) {
+      const groupIds = selectedGroupIds.length > 0 ? selectedGroupIds : null;
+      for await (const event of chatAPI.queryStream(question, 5, true, groupIds)) {
         if (event.type === 'sources') {
           // 更新来源
           setMessages(prev =>
@@ -218,7 +234,8 @@ export default function Chat() {
     setLoading(true);
 
     try {
-      const { data } = await chatAPI.query(input, 5, true);
+      const groupIds = selectedGroupIds.length > 0 ? selectedGroupIds : null;
+      const { data } = await chatAPI.query(input, 5, true, groupIds);
 
       const assistantMessage = {
         role: 'assistant',
@@ -273,6 +290,25 @@ export default function Chat() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span>知识库问答</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Tooltip title="选择知识分组，仅在选定分组中检索">
+                <Select
+                  mode="multiple"
+                  allowClear
+                  placeholder="全部知识"
+                  value={selectedGroupIds}
+                  onChange={setSelectedGroupIds}
+                  style={{ minWidth: 150, maxWidth: 300 }}
+                  size="small"
+                  maxTagCount={2}
+                  suffixIcon={<FolderOutlined />}
+                >
+                  {groups.map(g => (
+                    <Select.Option key={g.id} value={g.id}>
+                      <span style={{ color: g.color }}>●</span> {g.name}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Tooltip>
               <Tooltip title="流式输出可实时显示生成内容">
                 <Switch
                   checkedChildren={<ThunderboltOutlined />}
@@ -283,6 +319,11 @@ export default function Chat() {
                 />
               </Tooltip>
               {streamMode && <Tag color="blue" style={{ margin: 0 }}>流式模式</Tag>}
+              {selectedGroupIds.length > 0 && (
+                <Tag color="green" style={{ margin: 0 }}>
+                  <FolderOutlined /> 已选 {selectedGroupIds.length} 个分组
+                </Tag>
+              )}
             </div>
           </div>
         }

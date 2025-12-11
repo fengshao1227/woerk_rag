@@ -119,9 +119,9 @@ export const testAPI = {
 };
 
 export const chatAPI = {
-  query: (question, top_k = 5, use_history = true) =>
-    ragApi.post('/query', { question, top_k, use_history }),
-  queryStream: async function* (question, top_k = 5, use_history = true) {
+  query: (question, top_k = 5, use_history = true, group_ids = null) =>
+    ragApi.post('/query', { question, top_k, use_history, group_ids }),
+  queryStream: async function* (question, top_k = 5, use_history = true, group_ids = null) {
     const token = localStorage.getItem('token');
     const response = await fetch(`${RAG_API_BASE}/query/stream`, {
       method: 'POST',
@@ -129,7 +129,7 @@ export const chatAPI = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ question, top_k, use_history })
+      body: JSON.stringify({ question, top_k, use_history, group_ids })
     });
 
     if (!response.ok) {
