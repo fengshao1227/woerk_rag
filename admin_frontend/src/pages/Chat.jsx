@@ -108,7 +108,7 @@ export default function Chat() {
   const [streamMode, setStreamMode] = useState(true);
   const [activeSourceIndex, setActiveSourceIndex] = useState(null);  // 当前高亮的来源索引
   const [groups, setGroups] = useState([]);  // 知识分组列表
-  const [selectedGroupIds, setSelectedGroupIds] = useState([]);  // 选中的分组ID
+  const [selectedGroupNames, setSelectedGroupNames] = useState([]);  // 选中的分组名称
   const messagesEndRef = useRef(null);
   const abortControllerRef = useRef(null);
   const sourceRefs = useRef({});  // 来源元素的引用
@@ -172,8 +172,8 @@ export default function Chat() {
     setMessages(prev => [...prev, initialAssistantMessage]);
 
     try {
-      const groupIds = selectedGroupIds.length > 0 ? selectedGroupIds : null;
-      for await (const event of chatAPI.queryStream(question, 5, true, groupIds)) {
+      const groupNames = selectedGroupNames.length > 0 ? selectedGroupNames : null;
+      for await (const event of chatAPI.queryStream(question, 5, true, groupNames)) {
         if (event.type === 'sources') {
           // 更新来源
           setMessages(prev =>
@@ -234,8 +234,8 @@ export default function Chat() {
     setLoading(true);
 
     try {
-      const groupIds = selectedGroupIds.length > 0 ? selectedGroupIds : null;
-      const { data } = await chatAPI.query(input, 5, true, groupIds);
+      const groupNames = selectedGroupNames.length > 0 ? selectedGroupNames : null;
+      const { data } = await chatAPI.query(input, 5, true, groupNames);
 
       const assistantMessage = {
         role: 'assistant',
@@ -295,15 +295,15 @@ export default function Chat() {
                   mode="multiple"
                   allowClear
                   placeholder="全部知识"
-                  value={selectedGroupIds}
-                  onChange={setSelectedGroupIds}
+                  value={selectedGroupNames}
+                  onChange={setSelectedGroupNames}
                   style={{ minWidth: 150, maxWidth: 300 }}
                   size="small"
                   maxTagCount={2}
                   suffixIcon={<FolderOutlined />}
                 >
                   {groups.map(g => (
-                    <Select.Option key={g.id} value={g.id}>
+                    <Select.Option key={g.id} value={g.name}>
                       <span style={{ color: g.color }}>●</span> {g.name}
                     </Select.Option>
                   ))}
@@ -319,9 +319,9 @@ export default function Chat() {
                 />
               </Tooltip>
               {streamMode && <Tag color="blue" style={{ margin: 0 }}>流式模式</Tag>}
-              {selectedGroupIds.length > 0 && (
+              {selectedGroupNames.length > 0 && (
                 <Tag color="green" style={{ margin: 0 }}>
-                  <FolderOutlined /> 已选 {selectedGroupIds.length} 个分组
+                  <FolderOutlined /> 已选 {selectedGroupNames.length} 个分组
                 </Tag>
               )}
             </div>

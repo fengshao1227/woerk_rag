@@ -29,7 +29,7 @@ from datetime import datetime
 # 导入后台管理路由和认证
 from admin.routes import router as admin_router
 from admin.auth import get_current_user
-from admin.models import KnowledgeEntry
+from admin.models import KnowledgeEntry, KnowledgeGroup
 from admin.database import SessionLocal
 from admin.usage_logger import log_llm_usage, estimate_tokens
 
@@ -144,6 +144,7 @@ class QueryRequest(BaseModel):
     top_k: int = 5
     filters: Optional[Dict] = None
     group_ids: Optional[List[int]] = None  # 知识分组ID列表，只在指定分组中检索
+    group_names: Optional[List[str]] = None  # 知识分组名称列表（优先于group_ids）
     use_history: bool = True
 
 
@@ -163,6 +164,7 @@ class SearchRequest(BaseModel):
     top_k: int = 5
     filters: Optional[Dict] = None
     group_ids: Optional[List[int]] = None  # 知识分组ID列表，只在指定分组中检索
+    group_names: Optional[List[str]] = None  # 知识分组名称列表（优先于group_ids）
     score_threshold: float = 0.0
 
 
@@ -180,6 +182,28 @@ class AddKnowledgeResponse(BaseModel):
     extracted_info: Optional[Dict] = None
 
 
+def resolve_group_ids(group_ids: Optional[List[int]], group_names: Optional[List[str]]) -> Optional[List[int]]:
+    """
+    解析分组参数，group_names 优先于 group_ids
+    返回有效的分组ID列表，如果分组不存在则忽略
+    """
+    if group_names:
+        db = SessionLocal()
+        try:
+            groups = db.query(KnowledgeGroup).filter(
+                KnowledgeGroup.name.in_(group_names),
+                KnowledgeGroup.is_active == True
+            ).all()
+            if groups:
+                return [g.id for g in groups]
+            else:
+                logger.warning(f"未找到匹配的分组: {group_names}")
+                return None
+        finally:
+            db.close()
+    return group_ids
+
+
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest, http_request: Request, current_user = Depends(get_current_user)):
     """问答接口（需要登录）"""
@@ -190,12 +214,15 @@ async def query(request: QueryRequest, http_request: Request, current_user = Dep
     is_mcp = http_request.headers.get("X-MCP-Client") == "true"
     request_type = "mcp" if is_mcp else "query"
 
+    # 解析分组参数（group_names 优先）
+    effective_group_ids = resolve_group_ids(request.group_ids, request.group_names)
+
     try:
         result = qa_chain.query(
             question=request.question,
             top_k=request.top_k,
             filters=request.filters,
-            group_ids=request.group_ids,
+            group_ids=effective_group_ids,
             use_history=request.use_history
         )
 
@@ -244,6 +271,9 @@ async def query_stream(request: QueryRequest, current_user = Depends(get_current
     start_time = time.time()
     collected_answer = []
 
+    # 解析分组参数（group_names 优先）
+    effective_group_ids = resolve_group_ids(request.group_ids, request.group_names)
+
     def generate():
         nonlocal collected_answer
         try:
@@ -251,7 +281,7 @@ async def query_stream(request: QueryRequest, current_user = Depends(get_current
                 question=request.question,
                 top_k=request.top_k,
                 filters=request.filters,
-                group_ids=request.group_ids,
+                group_ids=effective_group_ids,
                 use_history=request.use_history
             ):
                 # 收集回答内容
@@ -310,13 +340,16 @@ async def search(request: SearchRequest, http_request: Request, current_user = D
     is_mcp = http_request.headers.get("X-MCP-Client") == "true"
     request_type = "mcp" if is_mcp else "search"
 
+    # 解析分组参数（group_names 优先）
+    effective_group_ids = resolve_group_ids(request.group_ids, request.group_names)
+
     try:
         # 使用 qa_chain 的 retriever（HybridSearch）支持分组过滤
         results = qa_chain.retriever.search(
             query=request.query,
             top_k=request.top_k,
             filters=request.filters,
-            group_ids=request.group_ids,
+            group_ids=effective_group_ids,
             use_hybrid=True
         )
 
