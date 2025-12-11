@@ -110,7 +110,7 @@ export default function Groups() {
       setTransferTargetKeys((currentItems || []).map(item => item.qdrant_id));
 
       // 加载所有知识条目
-      const { data: knowledgeData } = await knowledgeAPI.list(1, 500, null, null);
+      const { data: knowledgeData } = await knowledgeAPI.list(1, 100, null, null);
       setAllKnowledge(knowledgeData.items || []);
     } catch (error) {
       message.error('加载数据失败');
