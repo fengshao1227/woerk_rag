@@ -8,7 +8,7 @@ from typing import List, Optional
 from datetime import timedelta
 
 from admin.database import get_db
-from admin.models import User, LLMProvider, LLMModel, KnowledgeEntry, LLMUsageLog, KnowledgeGroup, KnowledgeGroupItem, KnowledgeVersion, EmbeddingProvider
+from admin.models import User, LLMProvider, LLMModel, KnowledgeEntry, LLMUsageLog, KnowledgeGroup, KnowledgeGroupItem, KnowledgeVersion, EmbeddingProvider, MCPApiKey
 from admin.schemas import (
     LoginRequest, TokenResponse, UserResponse,
     ProviderCreate, ProviderUpdate, ProviderResponse,
@@ -24,7 +24,8 @@ from admin.schemas import (
     KnowledgeVersionResponse, KnowledgeVersionDetailResponse, KnowledgeVersionListResponse,
     RollbackRequest, RollbackResponse,
     RemoteModelItem, RemoteModelsResponse, BalanceResponse, BatchModelCreate, BatchModelResponse,
-    EmbeddingProviderCreate, EmbeddingProviderUpdate, EmbeddingProviderResponse, TestEmbeddingRequest
+    EmbeddingProviderCreate, EmbeddingProviderUpdate, EmbeddingProviderResponse, TestEmbeddingRequest,
+    MCPApiKeyCreate, MCPApiKeyUpdate, MCPApiKeyResponse, MCPApiKeyListResponse
 )
 from admin.auth import (
     authenticate_user, create_access_token, get_current_user,
@@ -670,11 +671,25 @@ async def list_knowledge(
     page_size: int = Query(20, ge=1, le=100),
     category: Optional[str] = None,
     search: Optional[str] = None,
+    group_id: Optional[int] = Query(None, description="分组ID，0表示未分组，不传表示全部"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取知识条目列表"""
+    """获取知识条目列表，支持按分组筛选"""
     query = db.query(KnowledgeEntry)
+
+    # 分组筛选
+    if group_id is not None:
+        if group_id == 0:
+            # 未分组：查找所有不在 KnowledgeGroupItem 中的知识
+            grouped_qdrant_ids = db.query(KnowledgeGroupItem.qdrant_id).distinct().subquery()
+            query = query.filter(~KnowledgeEntry.qdrant_id.in_(grouped_qdrant_ids))
+        else:
+            # 指定分组：查找在该分组中的知识
+            group_qdrant_ids = db.query(KnowledgeGroupItem.qdrant_id).filter(
+                KnowledgeGroupItem.group_id == group_id
+            ).subquery()
+            query = query.filter(KnowledgeEntry.qdrant_id.in_(group_qdrant_ids))
 
     if category:
         query = query.filter(KnowledgeEntry.category == category)
@@ -1635,10 +1650,31 @@ async def list_groups(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取知识分组列表"""
+    """获取知识分组列表，首行为虚拟的"未分组""""
     groups = db.query(KnowledgeGroup).filter(KnowledgeGroup.is_active == True).order_by(KnowledgeGroup.id.desc()).all()
 
-    result = []
+    # 计算未分组知识数量：所有不在 KnowledgeGroupItem 中的 KnowledgeEntry
+    grouped_qdrant_ids = db.query(KnowledgeGroupItem.qdrant_id).distinct().subquery()
+    ungrouped_count = db.query(func.count(KnowledgeEntry.id)).filter(
+        ~KnowledgeEntry.qdrant_id.in_(grouped_qdrant_ids)
+    ).scalar() or 0
+
+    # 虚拟默认分组（未分组）
+    now = datetime.now()
+    default_group = KnowledgeGroupResponse(
+        id=0,
+        name="未分组",
+        description="未被任何分组引用的知识",
+        color="#999999",
+        icon="inbox",
+        is_active=True,
+        is_default=True,
+        items_count=ungrouped_count,
+        created_at=now,
+        updated_at=now
+    )
+
+    result = [default_group]  # 未分组放在首位
     for g in groups:
         items_count = db.query(func.count(KnowledgeGroupItem.id)).filter(KnowledgeGroupItem.group_id == g.id).scalar() or 0
         result.append(KnowledgeGroupResponse(
@@ -1648,6 +1684,7 @@ async def list_groups(
             color=g.color,
             icon=g.icon,
             is_active=g.is_active,
+            is_default=False,
             items_count=items_count,
             created_at=g.created_at,
             updated_at=g.updated_at
@@ -1763,7 +1800,26 @@ async def list_group_items(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取分组内的知识条目（使用 JOIN 优化，避免 N+1 查询）"""
+    """获取分组内的知识条目，group_id=0 表示未分组"""
+    if group_id == 0:
+        # 未分组：获取所有不在任何分组中的知识
+        grouped_qdrant_ids = db.query(KnowledgeGroupItem.qdrant_id).distinct().subquery()
+        entries = db.query(KnowledgeEntry).filter(
+            ~KnowledgeEntry.qdrant_id.in_(grouped_qdrant_ids)
+        ).all()
+
+        result = []
+        for entry in entries:
+            result.append(GroupItemResponse(
+                id=0,  # 虚拟 ID
+                group_id=0,
+                qdrant_id=entry.qdrant_id,
+                title=entry.title,
+                created_at=entry.created_at
+            ))
+        return result
+
+    # 正常分组
     group = db.query(KnowledgeGroup).filter(KnowledgeGroup.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="分组不存在")
@@ -2253,3 +2309,95 @@ async def test_embedding_provider(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"测试失败: {str(e)}")
+
+
+# ============================================================
+# MCP API 卡密管理
+# ============================================================
+import secrets
+
+
+def generate_api_key() -> str:
+    """生成随机API密钥，格式: rag_sk_xxx"""
+    return f"rag_sk_{secrets.token_hex(24)}"
+
+
+@router.get("/api-keys", response_model=MCPApiKeyListResponse)
+async def list_api_keys(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取所有卡密列表"""
+    keys = db.query(MCPApiKey).order_by(MCPApiKey.created_at.desc()).all()
+    return MCPApiKeyListResponse(
+        items=[MCPApiKeyResponse.model_validate(k) for k in keys],
+        total=len(keys)
+    )
+
+
+@router.post("/api-keys", response_model=MCPApiKeyResponse)
+async def create_api_key(
+    data: MCPApiKeyCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """创建新卡密"""
+    api_key = MCPApiKey(
+        key=generate_api_key(),
+        name=data.name,
+        expires_at=data.expires_at
+    )
+    db.add(api_key)
+    db.commit()
+    db.refresh(api_key)
+    return MCPApiKeyResponse.model_validate(api_key)
+
+
+@router.get("/api-keys/{key_id}", response_model=MCPApiKeyResponse)
+async def get_api_key(
+    key_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取卡密详情"""
+    api_key = db.query(MCPApiKey).filter(MCPApiKey.id == key_id).first()
+    if not api_key:
+        raise HTTPException(status_code=404, detail="卡密不存在")
+    return MCPApiKeyResponse.model_validate(api_key)
+
+
+@router.put("/api-keys/{key_id}", response_model=MCPApiKeyResponse)
+async def update_api_key(
+    key_id: int,
+    data: MCPApiKeyUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """更新卡密"""
+    api_key = db.query(MCPApiKey).filter(MCPApiKey.id == key_id).first()
+    if not api_key:
+        raise HTTPException(status_code=404, detail="卡密不存在")
+
+    update_data = data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(api_key, field, value)
+
+    db.commit()
+    db.refresh(api_key)
+    return MCPApiKeyResponse.model_validate(api_key)
+
+
+@router.delete("/api-keys/{key_id}", response_model=MessageResponse)
+async def delete_api_key(
+    key_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """删除卡密"""
+    api_key = db.query(MCPApiKey).filter(MCPApiKey.id == key_id).first()
+    if not api_key:
+        raise HTTPException(status_code=404, detail="卡密不存在")
+
+    db.delete(api_key)
+    db.commit()
+    return MessageResponse(message="卡密已删除")

@@ -360,6 +360,7 @@ class KnowledgeGroupResponse(BaseModel):
     color: str
     icon: str
     is_active: bool
+    is_default: bool = False  # 是否为默认分组（虚拟未分组）
     items_count: int = 0  # 分组内知识条目数量
     created_at: datetime
     updated_at: datetime
@@ -547,4 +548,54 @@ class EmbeddingProviderResponse(BaseModel):
 class TestEmbeddingRequest(BaseModel):
     """测试嵌入请求"""
     text: str = Field(default="测试文本", min_length=1, max_length=5000, description="测试文本内容")
+
+
+# ============================================================
+# MCP API 卡密管理
+# ============================================================
+class MCPApiKeyCreate(BaseModel):
+    """创建卡密请求"""
+    name: str = Field(..., min_length=1, max_length=100, description="卡密名称/备注")
+    expires_at: Optional[datetime] = Field(None, description="过期时间（可选）")
+
+
+class MCPApiKeyUpdate(BaseModel):
+    """更新卡密请求"""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    is_active: Optional[bool] = None
+    expires_at: Optional[datetime] = None
+
+
+class MCPApiKeyResponse(BaseModel):
+    """卡密响应"""
+    id: int
+    key: str
+    name: str
+    is_active: bool
+    expires_at: Optional[datetime]
+    last_used_at: Optional[datetime]
+    usage_count: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class MCPApiKeyListResponse(BaseModel):
+    """卡密列表响应"""
+    items: List[MCPApiKeyResponse]
+    total: int
+
+
+class MCPApiKeyVerifyRequest(BaseModel):
+    """卡密验证请求"""
+    api_key: str = Field(..., min_length=1)
+
+
+class MCPApiKeyVerifyResponse(BaseModel):
+    """卡密验证响应"""
+    valid: bool
+    message: str
+    name: Optional[str] = None
 

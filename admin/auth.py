@@ -6,13 +6,13 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
 from admin.database import get_db
-from admin.models import User
+from admin.models import User, MCPApiKey
 
 load_dotenv()
 
@@ -24,8 +24,8 @@ ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
 # 密码加密
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Bearer Token 认证
-security = HTTPBearer()
+# Bearer Token 认证 (可选，因为我们也支持 API Key)
+security = HTTPBearer(auto_error=False)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -59,38 +59,98 @@ def decode_token(token: str) -> Optional[dict]:
         return None
 
 
+def verify_api_key(api_key: str, db: Session) -> Optional[MCPApiKey]:
+    """验证 API Key 并返回卡密记录"""
+    if not api_key:
+        return None
+
+    key_record = db.query(MCPApiKey).filter(
+        MCPApiKey.key == api_key,
+        MCPApiKey.is_active == True
+    ).first()
+
+    if not key_record:
+        return None
+
+    # 检查过期时间
+    if key_record.expires_at and key_record.expires_at < datetime.now():
+        return None
+
+    # 更新使用统计
+    key_record.last_used_at = datetime.now()
+    key_record.usage_count += 1
+    db.commit()
+
+    return key_record
+
+
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
-    """获取当前登录用户"""
+    """
+    获取当前登录用户
+
+    支持两种认证方式:
+    1. Bearer Token (JWT): Authorization: Bearer <token>
+    2. API Key: X-API-Key: rag_sk_xxx
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="无效的认证凭据",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    token = credentials.credentials
-    payload = decode_token(token)
+    # 方式1: 检查 X-API-Key 请求头 (MCP 客户端使用)
+    api_key = request.headers.get("X-API-Key")
+    if api_key:
+        key_record = verify_api_key(api_key, db)
+        if key_record:
+            # API Key 验证成功，返回一个虚拟的管理员用户对象
+            # MCP 调用有完整的 API 权限
+            admin_user = db.query(User).filter(User.role == "admin").first()
+            if admin_user:
+                return admin_user
+            # 如果没有管理员用户，创建一个临时对象（不保存到数据库）
+            return User(
+                id=0,
+                username=f"mcp:{key_record.name}",
+                role="admin",
+                is_active=True
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API Key 无效或已过期"
+            )
 
-    if payload is None:
-        raise credentials_exception
+    # 方式2: 检查 Bearer Token (JWT)
+    if credentials:
+        token = credentials.credentials
+        payload = decode_token(token)
 
-    username: str = payload.get("sub")
-    if username is None:
-        raise credentials_exception
+        if payload is None:
+            raise credentials_exception
 
-    user = db.query(User).filter(User.username == username).first()
-    if user is None:
-        raise credentials_exception
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
 
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="用户已被禁用"
-        )
+        user = db.query(User).filter(User.username == username).first()
+        if user is None:
+            raise credentials_exception
 
-    return user
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="用户已被禁用"
+            )
+
+        return user
+
+    # 没有提供任何认证凭据
+    raise credentials_exception
 
 
 async def get_current_admin(current_user: User = Depends(get_current_user)) -> User:

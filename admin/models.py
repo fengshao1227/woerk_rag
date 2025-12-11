@@ -246,3 +246,18 @@ class KnowledgeTask(Base):
         Index('idx_status_created', 'status', 'created_at'),
         {'mysql_charset': 'utf8mb4'},
     )
+
+
+class MCPApiKey(Base):
+    """MCP API 卡密表"""
+    __tablename__ = "mcp_api_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(64), unique=True, nullable=False, index=True)  # 格式: rag_sk_xxx
+    name = Column(String(100), nullable=False)  # 卡密名称/备注
+    is_active = Column(Boolean, default=True, index=True)
+    expires_at = Column(TIMESTAMP, nullable=True)  # 过期时间（可选）
+    last_used_at = Column(TIMESTAMP, nullable=True)  # 最后使用时间
+    usage_count = Column(Integer, default=0)  # 使用次数
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())

@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Space, Tag, Upload, Spin } from 'antd';
-import { EditOutlined, DeleteOutlined, SearchOutlined, ExportOutlined, ImportOutlined, EyeOutlined } from '@ant-design/icons';
-import { knowledgeAPI } from '../services/api';
+import { EditOutlined, DeleteOutlined, SearchOutlined, ExportOutlined, ImportOutlined, EyeOutlined, FolderOutlined } from '@ant-design/icons';
+import { knowledgeAPI, groupAPI } from '../services/api';
 
 export default function Knowledge() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 });
-  const [filters, setFilters] = useState({ category: null, search: null });
+  const [filters, setFilters] = useState({ category: null, search: null, groupId: null });
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form] = Form.useForm();
@@ -15,11 +15,22 @@ export default function Knowledge() {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState(null);
+  const [groups, setGroups] = useState([]);
+
+  // 加载分组列表
+  const loadGroups = async () => {
+    try {
+      const { data: res } = await groupAPI.list(true);
+      setGroups(res.items || []);
+    } catch (error) {
+      console.error('加载分组失败', error);
+    }
+  };
 
   const loadData = async (page = 1, pageSize = 20) => {
     setLoading(true);
     try {
-      const { data: res } = await knowledgeAPI.list(page, pageSize, filters.category, filters.search);
+      const { data: res } = await knowledgeAPI.list(page, pageSize, filters.category, filters.search, filters.groupId);
       setData(res.items);
       setPagination({ current: res.page, pageSize: res.page_size, total: res.total });
     } finally {
@@ -27,6 +38,7 @@ export default function Knowledge() {
     }
   };
 
+  useEffect(() => { loadGroups(); }, []);
   useEffect(() => { loadData(); }, [filters]);
 
   const handleTableChange = (newPagination) => {
@@ -93,7 +105,7 @@ export default function Knowledge() {
     } finally {
       setImporting(false);
     }
-    return false; // 阻止默认上传行为
+    return false;
   };
 
   const handleViewDetail = async (record) => {
@@ -133,8 +145,21 @@ export default function Knowledge() {
   return (
     <div>
       <Form layout="inline" onFinish={handleSearch} style={{ marginBottom: 16 }}>
+        <Form.Item name="groupId">
+          <Select placeholder="分组" allowClear style={{ width: 150 }}>
+            {groups.map(g => (
+              <Select.Option key={g.id} value={g.id}>
+                <Space>
+                  <FolderOutlined style={{ color: g.color }} />
+                  <span>{g.name}</span>
+                  <Tag style={{ marginLeft: 4 }}>{g.items_count}</Tag>
+                </Space>
+              </Select.Option>
+            ))}
+          </Select>
+        </Form.Item>
         <Form.Item name="category">
-          <Select placeholder="分类" allowClear style={{ width: 150 }}>
+          <Select placeholder="分类" allowClear style={{ width: 120 }}>
             <Select.Option value="general">通用</Select.Option>
             <Select.Option value="project">项目</Select.Option>
             <Select.Option value="skill">技能</Select.Option>

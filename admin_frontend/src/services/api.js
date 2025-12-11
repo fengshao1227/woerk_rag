@@ -72,8 +72,8 @@ export const modelAPI = {
 };
 
 export const knowledgeAPI = {
-  list: (page, pageSize, category, search) =>
-    api.get('/knowledge', { params: { page, page_size: pageSize, category, search } }),
+  list: (page, pageSize, category, search, groupId) =>
+    api.get('/knowledge', { params: { page, page_size: pageSize, category, search, group_id: groupId } }),
   get: id => api.get(`/knowledge/${id}`),
   update: (id, data) => api.put(`/knowledge/${id}`, data),
   delete: id => api.delete(`/knowledge/${id}`),
@@ -189,6 +189,14 @@ export const embeddingProviderAPI = {
   delete: (id) => api.delete(`/embedding-providers/${id}`),
   setDefault: (id) => api.post(`/embedding-providers/${id}/set-default`),
   test: (id, text) => api.post(`/embedding-providers/${id}/test`, { text })
+};
+
+export const apiKeysAPI = {
+  list: () => api.get('/api-keys'),
+  create: (data) => api.post('/api-keys', data),
+  get: (id) => api.get(`/api-keys/${id}`),
+  update: (id, data) => api.put(`/api-keys/${id}`, data),
+  delete: (id) => api.delete(`/api-keys/${id}`)
 };
 
 export { ragApi };
