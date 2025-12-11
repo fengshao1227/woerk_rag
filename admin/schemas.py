@@ -514,7 +514,7 @@ class EmbeddingProviderUpdate(BaseModel):
     """更新嵌入供应商请求"""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     api_base_url: Optional[str] = Field(None, min_length=1, max_length=500)
-    api_key: Optional[str] = Field(None, min_length=1, max_length=500)
+    api_key: Optional[str] = Field(None, max_length=500)  # 允许空字符串,表示不更新
     model_name: Optional[str] = Field(None, min_length=1, max_length=100)
     embedding_dim: Optional[int] = Field(None, ge=1, le=8192)
     max_batch_size: Optional[int] = Field(None, ge=1, le=512)
