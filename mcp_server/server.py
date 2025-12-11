@@ -154,7 +154,7 @@ def search(query_text: str, top_k: int = 5) -> str:
 
 
 @mcp.tool()
-def add_knowledge(content: str, title: Optional[str] = None, category: str = "general") -> str:
+def add_knowledge(content: str, title: Optional[str] = None, category: str = "general", group_names: Optional[str] = None) -> str:
     """
     添加知识:将新知识添加到知识库,AI 会自动提取关键信息
 
@@ -162,19 +162,25 @@ def add_knowledge(content: str, title: Optional[str] = None, category: str = "ge
         content: 知识内容（项目经历、技术笔记、学习心得等）
         title: 可选的标题,不提供则由 AI 自动生成
         category: 分类,可选值:project（项目）、skill（技能）、experience（经历）、note（笔记）、general（通用）
+        group_names: 可选的分组名称,多个用逗号分隔,如"fm,项目A"
 
     Returns:
         添加结果和提取的关键信息
     """
     try:
         headers = get_auth_headers()
+
+        # 解析分组名称
+        groups = [g.strip() for g in group_names.split(",")] if group_names else None
+
         with httpx.Client(timeout=60.0) as client:
             response = client.post(
                 f"{RAG_API_BASE}/add_knowledge",
                 json={
                     "content": content,
                     "title": title,
-                    "category": category
+                    "category": category,
+                    "group_names": groups
                 },
                 headers=headers
             )
@@ -187,6 +193,8 @@ def add_knowledge(content: str, title: Optional[str] = None, category: str = "ge
         output += f"**关键词**: {', '.join(result.get('keywords', []))}\n\n"
         output += f"**技术栈**: {', '.join(result.get('tech_stack', []))}\n\n"
         output += f"**分类**: {result.get('category', category)}\n\n"
+        if groups:
+            output += f"**已添加到分组**: {', '.join(groups)}\n\n"
         output += f"**ID**: `{result.get('id', 'unknown')}`\n"
 
         return output
