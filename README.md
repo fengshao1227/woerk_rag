@@ -61,8 +61,10 @@
 
 ### 🔌 Claude Desktop 集成
 - **MCP Server**: 通过 Model Context Protocol 无缝接入
+- **API Key 认证**: 使用卡密认证，无需暴露管理员密码
 - **uvx 安装**: 一行命令快速安装
 - **分组过滤**: 支持按知识分组检索
+- **多会话支持**: HTTP/SSE 模式支持多客户端并发
 
 ---
 
@@ -314,6 +316,8 @@ rag/
 | CRUD | `/admin/api/embedding-providers` | 嵌入供应商管理 |
 | CRUD | `/admin/api/knowledge` | 知识库管理 |
 | CRUD | `/admin/api/groups` | 知识分组管理 |
+| CRUD | `/admin/api/api-keys` | MCP 卡密管理 |
+| POST | `/mcp/verify` | 验证 MCP 卡密（公开） |
 | GET | `/admin/api/usage/logs` | 使用日志 |
 | GET | `/admin/api/usage/stats` | 使用统计 |
 | POST | `/admin/api/models/test` | 测试 LLM 模型 |
@@ -389,29 +393,45 @@ curl -X POST https://your-domain/search \
 
 ## Claude Desktop 集成
 
-### 方式一: uvx 安装 (推荐)
+### 方式一: API Key 认证 (推荐)
 
-```bash
-uvx --from git+https://github.com/fengshao1227/woerk_rag.git rag-mcp
-```
-
-### 方式二: 配置 claude_desktop_config.json
+1. 在后台管理 -> MCP卡密 页面创建卡密
+2. 配置 `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "rag-knowledge": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/fengshao1227/woerk_rag.git",
-        "rag-mcp"
-      ],
+      "command": "python",
+      "args": ["/path/to/rag/mcp_server/server.py"],
       "env": {
-        "RAG_API_URL": "https://your-domain",
-        "RAG_USERNAME": "admin",
-        "RAG_PASSWORD": "admin123"
+        "RAG_API_KEY": "rag_sk_你的卡密"
       }
+    }
+  }
+}
+```
+
+### 方式二: uvx 安装
+
+```bash
+uvx --from git+https://github.com/fengshao1227/woerk_rag.git rag-mcp
+```
+
+### 方式三: HTTP/SSE 模式 (多会话)
+
+适用于多个 Claude 窗口同时使用：
+
+```bash
+# 先启动 MCP Server (HTTP 模式)
+RAG_API_KEY=rag_sk_xxx python mcp_server/server.py --http
+```
+
+```json
+{
+  "mcpServers": {
+    "rag-knowledge": {
+      "url": "http://localhost:8766/sse"
     }
   }
 }
@@ -577,6 +597,14 @@ bash scripts/graceful-restart.sh
 ---
 
 ## 更新日志
+
+### v1.3.0 (2025-12-11)
+- ✨ 新增 MCP 卡密管理功能，支持 API Key 认证
+- ✨ 后台新增 MCP卡密 管理页面
+- ✨ MCP Server 支持 HTTP/SSE 多会话模式
+- ✨ 知识库支持按分组筛选，新增"未分组"虚拟分组
+- 🔧 部署脚本自动检测前端更改并构建上传
+- 🔧 认证模块支持 JWT 和 API Key 双重认证
 
 ### v1.2.0 (2025-12-11)
 - ✨ 新增异步任务队列，知识添加支持高并发
