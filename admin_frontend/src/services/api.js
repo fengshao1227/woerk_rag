@@ -107,8 +107,13 @@ export const groupAPI = {
   listSharedWithMe: () => api.get('/my-shared-groups')
 };
 
-// 用户 API（用于共享选择）
+// 用户 API
 export const userAPI = {
+  list: () => api.get('/users'),
+  create: (data) => api.post('/users', data),
+  get: (id) => api.get(`/users/${id}`),
+  update: (id, data) => api.put(`/users/${id}`, data),
+  delete: (id) => api.delete(`/users/${id}`),
   listForShare: () => api.get('/users/list')
 };
 

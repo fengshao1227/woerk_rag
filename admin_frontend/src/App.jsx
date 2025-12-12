@@ -13,6 +13,7 @@ import Agent from './pages/Agent';
 import Evaluation from './pages/Evaluation';
 import EmbeddingProviders from './pages/EmbeddingProviders';
 import ApiKeys from './pages/ApiKeys';
+import Users from './pages/Users';
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -36,6 +37,7 @@ export default function App() {
             <Route path="agent" element={<Agent />} />
             <Route path="evaluation" element={<Evaluation />} />
             <Route path="api-keys" element={<ApiKeys />} />
+            <Route path="users" element={<Users />} />
           </Route>
         </Routes>
       </BrowserRouter>

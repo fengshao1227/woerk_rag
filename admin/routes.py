@@ -26,7 +26,8 @@ from admin.schemas import (
     RemoteModelItem, RemoteModelsResponse, BalanceResponse, BatchModelCreate, BatchModelResponse,
     EmbeddingProviderCreate, EmbeddingProviderUpdate, EmbeddingProviderResponse, TestEmbeddingRequest,
     MCPApiKeyCreate, MCPApiKeyUpdate, MCPApiKeyResponse, MCPApiKeyListResponse,
-    GroupShareCreate, GroupShareUpdate, GroupShareResponse, GroupShareListResponse, UserSimpleResponse
+    GroupShareCreate, GroupShareUpdate, GroupShareResponse, GroupShareListResponse, UserSimpleResponse,
+    UserCreate, UserUpdate, UserListResponse
 )
 from admin.auth import (
     authenticate_user, create_access_token, get_current_user,
@@ -2654,3 +2655,126 @@ async def list_my_shared_groups(
         ))
 
     return KnowledgeGroupListResponse(items=result, total=len(result))
+
+
+# ============================================================
+# 用户管理（仅管理员可用）
+# ============================================================
+def require_admin(current_user: User = Depends(get_current_user)):
+    """要求管理员权限"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return current_user
+
+
+@router.get("/users", response_model=UserListResponse)
+async def list_all_users(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """获取所有用户列表（仅管理员）"""
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return UserListResponse(
+        items=[UserResponse.model_validate(u) for u in users],
+        total=len(users)
+    )
+
+
+@router.post("/users", response_model=UserResponse)
+async def create_user(
+    data: UserCreate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """创建新用户（仅管理员）"""
+    # 检查用户名是否已存在
+    existing = db.query(User).filter(User.username == data.username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="用户名已存在")
+
+    user = User(
+        username=data.username,
+        password_hash=get_password_hash(data.password),
+        role=data.role,
+        is_active=True
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    logger.info(f"管理员 {current_user.username} 创建了用户: {data.username}")
+    return UserResponse.model_validate(user)
+
+
+@router.get("/users/{user_id}", response_model=UserResponse)
+async def get_user_detail(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """获取用户详情（仅管理员）"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return UserResponse.model_validate(user)
+
+
+@router.put("/users/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: int,
+    data: UserUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """更新用户信息（仅管理员）"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 不允许禁用自己
+    if data.is_active is False and user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="不能禁用自己的账号")
+
+    # 更新密码
+    if data.password:
+        user.password_hash = get_password_hash(data.password)
+
+    # 更新角色
+    if data.role:
+        # 不允许取消自己的管理员权限
+        if data.role != "admin" and user.id == current_user.id:
+            raise HTTPException(status_code=400, detail="不能取消自己的管理员权限")
+        user.role = data.role
+
+    # 更新激活状态
+    if data.is_active is not None:
+        user.is_active = data.is_active
+
+    db.commit()
+    db.refresh(user)
+
+    logger.info(f"管理员 {current_user.username} 更新了用户: {user.username}")
+    return UserResponse.model_validate(user)
+
+
+@router.delete("/users/{user_id}", response_model=MessageResponse)
+async def delete_user(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """删除用户（仅管理员）"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 不允许删除自己
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="不能删除自己的账号")
+
+    username = user.username
+    db.delete(user)
+    db.commit()
+
+    logger.info(f"管理员 {current_user.username} 删除了用户: {username}")
+    return MessageResponse(message=f"用户 {username} 已删除")

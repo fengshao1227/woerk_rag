@@ -1,6 +1,6 @@
 import { Layout as AntLayout, Menu } from 'antd';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { DashboardOutlined, ApiOutlined, BookOutlined, LogoutOutlined, BarChartOutlined, MessageOutlined, ExperimentOutlined, RobotOutlined, FolderOutlined, DatabaseOutlined, KeyOutlined } from '@ant-design/icons';
+import { DashboardOutlined, ApiOutlined, BookOutlined, LogoutOutlined, BarChartOutlined, MessageOutlined, ExperimentOutlined, RobotOutlined, FolderOutlined, DatabaseOutlined, KeyOutlined, TeamOutlined } from '@ant-design/icons';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -17,6 +17,7 @@ export default function Layout() {
     { key: '/channels', icon: <ApiOutlined />, label: '渠道管理' },
     { key: '/embedding-providers', icon: <DatabaseOutlined />, label: '嵌入模型' },
     { key: '/api-keys', icon: <KeyOutlined />, label: 'MCP卡密' },
+    { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
     { key: '/usage', icon: <BarChartOutlined />, label: '使用统计' },
     { key: '/evaluation', icon: <ExperimentOutlined />, label: '系统评估' }
   ];

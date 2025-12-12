@@ -653,3 +653,26 @@ class UserSimpleResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+# ============================================================
+# 用户管理相关
+# ============================================================
+class UserCreate(BaseModel):
+    """创建用户请求"""
+    username: str = Field(..., min_length=2, max_length=50, description="用户名")
+    password: str = Field(..., min_length=6, max_length=100, description="密码")
+    role: str = Field(default="user", pattern="^(admin|user)$", description="角色")
+
+
+class UserUpdate(BaseModel):
+    """更新用户请求"""
+    password: Optional[str] = Field(None, min_length=6, max_length=100, description="新密码（可选）")
+    role: Optional[str] = Field(None, pattern="^(admin|user)$", description="角色")
+    is_active: Optional[bool] = None
+
+
+class UserListResponse(BaseModel):
+    """用户列表响应"""
+    items: List[UserResponse]
+    total: int
+
