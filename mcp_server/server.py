@@ -70,21 +70,30 @@ ADD_KNOWLEDGE_MAX_WAIT = 120  # 最大等待时间（秒）
 # 初始化 MCP Server
 mcp = FastMCP("RAG Knowledge Base")
 
-# 全局 token 缓存（用于兼容模式）
+# 线程安全的状态缓存（支持多会话并发）
+import threading
+_auth_lock = threading.Lock()
 _auth_token: Optional[str] = None
 _api_key_verified: bool = False
+_api_key_verify_time: float = 0  # 验证时间戳，用于定期重新验证
+
+# API Key 验证缓存时间（秒）
+API_KEY_CACHE_TTL = 300  # 5分钟
 
 
 def verify_api_key() -> bool:
-    """验证 API Key 是否有效"""
-    global _api_key_verified
-
-    if _api_key_verified:
-        return True
+    """验证 API Key 是否有效（线程安全，带缓存）"""
+    global _api_key_verified, _api_key_verify_time
 
     if not RAG_API_KEY:
         return False
 
+    # 检查缓存是否有效
+    with _auth_lock:
+        if _api_key_verified and (time.time() - _api_key_verify_time) < API_KEY_CACHE_TTL:
+            return True
+
+    # 需要重新验证
     try:
         with httpx.Client(timeout=30.0) as client:
             response = client.post(
@@ -94,10 +103,14 @@ def verify_api_key() -> bool:
             response.raise_for_status()
             data = response.json()
             if data.get("valid"):
-                _api_key_verified = True
+                with _auth_lock:
+                    _api_key_verified = True
+                    _api_key_verify_time = time.time()
                 return True
             else:
                 print(f"API Key 验证失败: {data.get('message', '未知错误')}", file=sys.stderr)
+                with _auth_lock:
+                    _api_key_verified = False
                 return False
     except Exception as e:
         print(f"API Key 验证请求失败: {e}", file=sys.stderr)
@@ -105,10 +118,12 @@ def verify_api_key() -> bool:
 
 
 def get_auth_token_by_login() -> str:
-    """通过账号密码登录获取 token（兼容旧版配置）"""
+    """通过账号密码登录获取 token（兼容旧版配置，线程安全）"""
     global _auth_token
-    if _auth_token:
-        return _auth_token
+
+    with _auth_lock:
+        if _auth_token:
+            return _auth_token
 
     if not MCP_USERNAME or not MCP_PASSWORD:
         raise Exception("未配置 RAG_API_KEY 或 RAG_MCP_USERNAME/RAG_MCP_PASSWORD")
@@ -121,8 +136,10 @@ def get_auth_token_by_login() -> str:
             )
             response.raise_for_status()
             data = response.json()
-            _auth_token = data.get("access_token")
-            return _auth_token
+            token = data.get("access_token")
+            with _auth_lock:
+                _auth_token = token
+            return token
     except Exception as e:
         raise Exception(f"登录认证失败: {str(e)}")
 

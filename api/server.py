@@ -77,6 +77,16 @@ app.add_middleware(
 # 注册后台管理路由
 app.include_router(admin_router)
 
+# 注册 MCP 路由和挂载 MCP 应用（支持多会话并发）
+try:
+    from api.mcp_routes import router as mcp_router, get_mcp_app
+    app.include_router(mcp_router)
+    # 挂载 MCP Streamable HTTP 应用到 /mcp 路径
+    app.mount("/mcp", get_mcp_app())
+    logger.info("MCP 端点已启用: /mcp (支持多会话)")
+except ImportError as e:
+    logger.warning(f"MCP 路由加载失败（可选功能）: {e}")
+
 # 静态文件目录
 STATIC_DIR = Path(__file__).parent.parent / "static"
 ADMIN_STATIC_DIR = Path(__file__).parent.parent / "admin_frontend" / "dist"
