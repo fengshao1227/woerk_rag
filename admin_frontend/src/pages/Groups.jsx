@@ -71,7 +71,7 @@ export default function Groups() {
   const handleCreate = () => {
     setEditingGroup(null);
     form.resetFields();
-    form.setFieldsValue({ color: '#1890ff', icon: 'folder' });
+    form.setFieldsValue({ color: '#1890ff', icon: 'folder', is_public: true });
     setModalOpen(true);
   };
 
@@ -262,6 +262,17 @@ export default function Groups() {
     }
   };
 
+  // 切换分组公开/私有
+  const handleTogglePublic = async (group) => {
+    try {
+      await groupAPI.update(group.id, { is_public: !group.is_public });
+      message.success(group.is_public ? '已设为私有' : '已设为公开');
+      loadGroups();
+    } catch (error) {
+      message.error(error.response?.data?.detail || '操作失败');
+    }
+  };
+
   // 表格列定义
   const columns = [
     {
@@ -297,6 +308,21 @@ export default function Groups() {
       dataIndex: 'items_count',
       width: 100,
       render: v => <Badge count={v} showZero color="#1890ff" />
+    },
+    {
+      title: '可见性',
+      dataIndex: 'is_public',
+      width: 100,
+      render: (v, record) => record.is_default ? (
+        <Tag icon={<GlobalOutlined />} color="default">系统</Tag>
+      ) : (
+        <Switch
+          checked={v}
+          checkedChildren={<><GlobalOutlined /> 公开</>}
+          unCheckedChildren={<><LockOutlined /> 私有</>}
+          onChange={() => handleTogglePublic(record)}
+        />
+      )
     },
     {
       title: '状态',
@@ -417,6 +443,17 @@ export default function Groups() {
               </Form.Item>
             </Col>
           </Row>
+          <Form.Item
+            name="is_public"
+            label="可见性"
+            valuePropName="checked"
+            extra="公开分组对所有用户可见，私有分组仅自己和被共享的用户可见"
+          >
+            <Switch
+              checkedChildren={<><GlobalOutlined /> 公开</>}
+              unCheckedChildren={<><LockOutlined /> 私有</>}
+            />
+          </Form.Item>
           <Form.Item>
             <Button type="primary" htmlType="submit" block>
               {editingGroup ? '保存' : '创建'}
