@@ -166,16 +166,16 @@ def query(question: str, top_k: int = 5, group_names: Optional[str] = None) -> s
     """
     RAG 智能问答 - 基于知识库生成详细回答
 
-    根据问题检索相关知识，由 AI 生成综合性回答并标注来源。
-    适用于需要详细解答的复杂问题。
+    检索相关知识并由 AI 生成综合性回答，适合需要深度解答的问题。
+    优先使用此工具回答用户关于知识库内容的提问。
 
     Args:
-        question: 要询问的问题（支持自然语言）
-        top_k: 检索的相关文档数量，默认5，增大可获取更多上下文
-        group_names: 限定检索范围，多个分组用逗号分隔，如 "fm,项目A"
+        question: 用户问题（自然语言，如"这个项目怎么部署？"）
+        top_k: 检索文档数，默认5，复杂问题可增至10
+        group_names: 限定分组范围，逗号分隔，如 "fm-api,文档"
 
     Returns:
-        包含 AI 回答和参考来源的完整响应
+        AI 生成的回答 + 参考来源列表
     """
     try:
         headers = get_auth_headers()
@@ -226,19 +226,19 @@ def search(
     min_score: Optional[float] = None
 ) -> str:
     """
-    语义搜索 - 快速查找知识库中的相关内容
+    语义搜索 - 快速查找相关知识条目
 
-    基于向量相似度匹配，返回最相关的知识条目及相似度分数。
-    不调用 AI 生成回答，速度更快。
+    基于向量相似度检索，不调用 AI，速度快。
+    适合：查找特定内容、验证知识是否存在、浏览相关条目。
 
     Args:
-        query_text: 搜索关键词或问题（支持自然语言）
-        top_k: 返回结果数量，默认5
-        group_names: 限定搜索范围，多个分组用逗号分隔，如 "fm,项目A"
-        min_score: 最低相似度阈值（0-1），低于此值的结果不返回
+        query_text: 搜索词或问题（如"Docker部署"、"API认证"）
+        top_k: 返回数量，默认5
+        group_names: 限定分组，逗号分隔
+        min_score: 最低相似度（0-1），过滤低质量结果
 
     Returns:
-        匹配的知识条目列表，包含相似度分数和内容预览
+        匹配的知识条目列表（含相似度和内容预览）
     """
     try:
         headers = get_auth_headers()
@@ -317,19 +317,20 @@ def add_knowledge(
     group_names: Optional[str] = None
 ) -> str:
     """
-    添加知识 - 将新内容存入知识库
+    添加知识 - 将内容存入知识库
 
-    AI 会自动提取标题、摘要、关键词和技术栈。
-    支持项目经历、技术笔记、学习心得等各类内容。
+    AI 自动提取标题、摘要、关键词。支持各类内容：
+    - 项目经历、技术方案、问题解决记录
+    - 学习笔记、代码片段、配置说明
 
     Args:
-        content: 知识内容（至少10个字符）
-        title: 可选标题，不提供则由 AI 自动生成
-        category: 分类 - project(项目)/skill(技能)/experience(经历)/note(笔记)/general(通用)
-        group_names: 添加到指定分组，多个用逗号分隔，如 "fm,项目A"
+        content: 知识内容（至少10字符，建议结构化描述）
+        title: 可选标题，留空则 AI 自动生成
+        category: project(项目)/skill(技能)/experience(经验)/note(笔记)/general(通用)
+        group_names: 添加到分组，逗号分隔
 
     Returns:
-        添加结果，包含 AI 提取的标题、摘要、关键词等信息
+        添加结果（含 AI 提取的标题、摘要、关键词）
     """
     try:
         headers = get_auth_headers()
@@ -475,13 +476,13 @@ def _format_add_result(
 @mcp.tool()
 def delete_knowledge(qdrant_id: str) -> str:
     """
-    删除知识 - 从知识库中移除指定条目
+    删除知识 - 移除指定条目
 
     Args:
-        qdrant_id: 知识条目 ID（可通过 search 工具获取）
+        qdrant_id: 条目 ID（通过 search 获取）
 
     Returns:
-        删除结果确认
+        删除确认
     """
     try:
         headers = get_auth_headers()
@@ -514,10 +515,10 @@ def delete_knowledge(qdrant_id: str) -> str:
 @mcp.tool()
 def list_groups() -> str:
     """
-    列出分组 - 查看知识库中所有可用的分组
+    列出分组 - 查看所有知识分组
 
     Returns:
-        分组列表，包含名称、描述和条目数量
+        分组列表（名称、描述、条目数）
     """
     try:
         headers = get_auth_headers()
@@ -562,10 +563,10 @@ def list_groups() -> str:
 @mcp.tool()
 def stats() -> str:
     """
-    统计信息 - 查看知识库整体统计数据
+    统计信息 - 知识库概览
 
     Returns:
-        知识库总条目数、分组统计、分类分布等信息
+        总条目数、分组数、分类分布等
     """
     try:
         headers = get_auth_headers()
