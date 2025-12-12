@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Input, Button, Card, Spin, Empty, Tag, Collapse, Switch, Tooltip, Popover, Select } from 'antd';
+import { Input, Button, Card, Spin, Empty, Tag, Collapse, Switch, Tooltip, Popover, Select, Grid } from 'antd';
 import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, ThunderboltOutlined, LinkOutlined, FolderOutlined } from '@ant-design/icons';
 import { chatAPI, groupAPI } from '../services/api';
 
 const { TextArea } = Input;
+const { useBreakpoint } = Grid;
 
 /**
  * 渲染带引用高亮的回答内容
@@ -112,6 +113,8 @@ export default function Chat() {
   const messagesEndRef = useRef(null);
   const abortControllerRef = useRef(null);
   const sourceRefs = useRef({});  // 来源元素的引用
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
 
   // 加载分组列表
   useEffect(() => {
@@ -287,28 +290,30 @@ export default function Chat() {
       {/* 消息区域 */}
       <Card
         title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <span>知识库问答</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Tooltip title="选择知识分组，仅在选定分组中检索">
-                <Select
-                  mode="multiple"
-                  allowClear
-                  placeholder="全部知识"
-                  value={selectedGroupNames}
-                  onChange={setSelectedGroupNames}
-                  style={{ minWidth: 150, maxWidth: 300 }}
-                  size="small"
-                  maxTagCount={2}
-                  suffixIcon={<FolderOutlined />}
-                >
-                  {groups.map(g => (
-                    <Select.Option key={g.id} value={g.name}>
-                      <span style={{ color: g.color }}>●</span> {g.name}
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Tooltip>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: isMobile ? 14 : 16 }}>知识库问答</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {!isMobile && (
+                <Tooltip title="选择知识分组，仅在选定分组中检索">
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    placeholder="全部知识"
+                    value={selectedGroupNames}
+                    onChange={setSelectedGroupNames}
+                    style={{ minWidth: 120, maxWidth: 200 }}
+                    size="small"
+                    maxTagCount={1}
+                    suffixIcon={<FolderOutlined />}
+                  >
+                    {groups.map(g => (
+                      <Select.Option key={g.id} value={g.name}>
+                        <span style={{ color: g.color }}>●</span> {g.name}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Tooltip>
+              )}
               <Tooltip title="流式输出可实时显示生成内容">
                 <Switch
                   checkedChildren={<ThunderboltOutlined />}
@@ -318,31 +323,48 @@ export default function Chat() {
                   size="small"
                 />
               </Tooltip>
-              {streamMode && <Tag color="blue" style={{ margin: 0 }}>流式模式</Tag>}
-              {selectedGroupNames.length > 0 && (
-                <Tag color="green" style={{ margin: 0 }}>
-                  <FolderOutlined /> 已选 {selectedGroupNames.length} 个分组
-                </Tag>
-              )}
+              {streamMode && !isMobile && <Tag color="blue" style={{ margin: 0 }}>流式模式</Tag>}
             </div>
           </div>
         }
         extra={
           <Button size="small" onClick={clearHistory} disabled={messages.length === 0}>
-            清除对话
+            {isMobile ? '清除' : '清除对话'}
           </Button>
         }
         style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-        styles={{ body: { flex: 1, overflow: 'auto', padding: '16px' } }}
+        styles={{ body: { flex: 1, overflow: 'auto', padding: isMobile ? '8px' : '16px' } }}
       >
+        {/* 移动端分组选择器 */}
+        {isMobile && (
+          <div style={{ marginBottom: 8 }}>
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="选择知识分组"
+              value={selectedGroupNames}
+              onChange={setSelectedGroupNames}
+              style={{ width: '100%' }}
+              size="small"
+              maxTagCount={2}
+              suffixIcon={<FolderOutlined />}
+            >
+              {groups.map(g => (
+                <Select.Option key={g.id} value={g.name}>
+                  <span style={{ color: g.color }}>●</span> {g.name}
+                </Select.Option>
+              ))}
+            </Select>
+          </div>
+        )}
         {messages.length === 0 ? (
           <Empty
-            image={<RobotOutlined style={{ fontSize: 64, color: '#1890ff' }} />}
-            description="基于知识库的智能问答，输入问题开始对话"
-            style={{ marginTop: 100 }}
+            image={<RobotOutlined style={{ fontSize: isMobile ? 48 : 64, color: '#1890ff' }} />}
+            description={isMobile ? "输入问题开始对话" : "基于知识库的智能问答，输入问题开始对话"}
+            style={{ marginTop: isMobile ? 50 : 100 }}
           />
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : 16 }}>
             {messages.map((msg, index) => (
               <div
                 key={msg.id || index}
@@ -353,26 +375,27 @@ export default function Chat() {
               >
                 <div
                   style={{
-                    maxWidth: '80%',
-                    padding: '12px 16px',
+                    maxWidth: isMobile ? '90%' : '80%',
+                    padding: isMobile ? '8px 12px' : '12px 16px',
                     borderRadius: 12,
                     background: msg.role === 'user' ? '#1890ff' : (msg.isError ? '#fff2f0' : '#f5f5f5'),
                     color: msg.role === 'user' ? '#fff' : (msg.isError ? '#ff4d4f' : '#333'),
+                    fontSize: isMobile ? 13 : 14,
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                     {msg.role === 'user' ? (
-                      <UserOutlined />
+                      <UserOutlined style={{ fontSize: isMobile ? 12 : 14 }} />
                     ) : (
-                      <RobotOutlined />
+                      <RobotOutlined style={{ fontSize: isMobile ? 12 : 14 }} />
                     )}
-                    <span style={{ fontWeight: 500 }}>
+                    <span style={{ fontWeight: 500, fontSize: isMobile ? 12 : 14 }}>
                       {msg.role === 'user' ? '你' : 'AI 助手'}
                     </span>
                     {msg.isStreaming && (
-                      <Tag color="processing" style={{ marginLeft: 4 }}>
+                      <Tag color="processing" style={{ marginLeft: 4, fontSize: 10 }}>
                         <Spin size="small" style={{ marginRight: 4 }} />
-                        生成中...
+                        生成中
                       </Tag>
                     )}
                   </div>
@@ -478,14 +501,14 @@ export default function Chat() {
       </Card>
 
       {/* 输入区域 */}
-      <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
+      <div style={{ marginTop: isMobile ? 8 : 16, display: 'flex', gap: isMobile ? 8 : 12 }}>
         <TextArea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="输入问题，按 Enter 发送，Shift+Enter 换行"
-          autoSize={{ minRows: 1, maxRows: 4 }}
-          style={{ flex: 1 }}
+          placeholder={isMobile ? "输入问题..." : "输入问题，按 Enter 发送，Shift+Enter 换行"}
+          autoSize={{ minRows: 1, maxRows: isMobile ? 3 : 4 }}
+          style={{ flex: 1, fontSize: isMobile ? 14 : 14 }}
           disabled={loading}
         />
         <Button
@@ -493,9 +516,9 @@ export default function Chat() {
           icon={<SendOutlined />}
           onClick={handleSend}
           loading={loading}
-          style={{ height: 'auto' }}
+          style={{ height: 'auto', padding: isMobile ? '8px 12px' : '8px 16px' }}
         >
-          发送
+          {!isMobile && '发送'}
         </Button>
       </div>
 

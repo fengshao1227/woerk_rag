@@ -15,3 +15,231 @@ body {
 #root {
   min-height: 100vh;
 }
+
+/* ============================================================
+   移动端响应式适配
+   ============================================================ */
+
+/* 移动端菜单按钮 */
+.mobile-menu-trigger {
+  display: none;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 8px;
+}
+
+/* 移动端表格优化 */
+@media screen and (max-width: 768px) {
+  /* 显示移动端菜单按钮 */
+  .mobile-menu-trigger {
+    display: block;
+  }
+
+  /* Header 移动端样式 */
+  .ant-layout-header {
+    padding: 0 12px !important;
+  }
+
+  /* 内容区移动端样式 */
+  .ant-layout-content {
+    margin: 8px !important;
+    padding: 12px !important;
+  }
+
+  /* 表格移动端适配 */
+  .ant-table {
+    font-size: 12px;
+  }
+
+  .ant-table-thead > tr > th,
+  .ant-table-tbody > tr > td {
+    padding: 8px 4px !important;
+  }
+
+  /* 隐藏表格中次要列 */
+  .ant-table .hide-on-mobile {
+    display: none !important;
+  }
+
+  /* 卡片移动端样式 */
+  .ant-card {
+    margin-bottom: 12px;
+  }
+
+  .ant-card-head {
+    padding: 0 12px;
+    min-height: 40px;
+  }
+
+  .ant-card-head-title {
+    font-size: 14px;
+  }
+
+  .ant-card-body {
+    padding: 12px !important;
+  }
+
+  /* 表单移动端样式 */
+  .ant-form-item {
+    margin-bottom: 12px;
+  }
+
+  /* 按钮移动端样式 */
+  .ant-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  /* 弹窗移动端样式 */
+  .ant-modal {
+    max-width: calc(100vw - 32px) !important;
+    margin: 16px !important;
+  }
+
+  .ant-modal-content {
+    padding: 16px !important;
+  }
+
+  .ant-modal-header {
+    padding: 12px 0 !important;
+  }
+
+  .ant-modal-body {
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  /* 抽屉移动端样式 */
+  .ant-drawer-content-wrapper {
+    width: 280px !important;
+  }
+
+  /* 标签移动端样式 */
+  .ant-tag {
+    font-size: 10px;
+    padding: 0 4px;
+    margin: 2px;
+  }
+
+  /* 统计卡片移动端样式 */
+  .ant-statistic-title {
+    font-size: 12px;
+  }
+
+  .ant-statistic-content-value {
+    font-size: 20px;
+  }
+
+  /* Select 移动端样式 */
+  .ant-select {
+    min-width: 100px !important;
+  }
+
+  /* 分页移动端样式 */
+  .ant-pagination {
+    font-size: 12px;
+  }
+
+  .ant-pagination-item {
+    min-width: 28px;
+    height: 28px;
+    line-height: 26px;
+  }
+
+  /* 聊天界面移动端适配 */
+  .chat-message-content {
+    max-width: 90% !important;
+  }
+
+  /* 侧边栏折叠时的遮罩 */
+  .ant-layout-sider-zero-width-trigger {
+    top: 12px;
+    right: -36px;
+    width: 36px;
+    height: 36px;
+    line-height: 36px;
+    background: #001529;
+  }
+}
+
+/* 平板端适配 */
+@media screen and (min-width: 769px) and (max-width: 1024px) {
+  .ant-layout-content {
+    margin: 12px !important;
+    padding: 16px !important;
+  }
+
+  .ant-table-thead > tr > th,
+  .ant-table-tbody > tr > td {
+    padding: 12px 8px !important;
+  }
+}
+
+/* 大屏优化 */
+@media screen and (min-width: 1600px) {
+  .ant-layout-content {
+    max-width: 1400px;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+}
+
+/* ============================================================
+   通用动画和交互
+   ============================================================ */
+
+/* 平滑过渡 */
+.ant-menu-item,
+.ant-btn,
+.ant-card {
+  transition: all 0.2s ease;
+}
+
+/* 卡片悬停效果 */
+.ant-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* ============================================================
+   暗色模式支持 (可选)
+   ============================================================ */
+@media (prefers-color-scheme: dark) {
+  /* 如需暗色模式，可在此添加 */
+}
+
+/* ============================================================
+   打印样式
+   ============================================================ */
+@media print {
+  .ant-layout-sider,
+  .ant-layout-header,
+  .ant-btn,
+  .ant-pagination {
+    display: none !important;
+  }
+
+  .ant-layout-content {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}

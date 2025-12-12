@@ -3,9 +3,89 @@ import axios from 'axios';
 const API_BASE = 'https://rag.litxczv.shop/admin/api';
 const RAG_API_BASE = 'https://rag.litxczv.shop';
 
+// Token 管理
+const TokenManager = {
+  getAccessToken: () => localStorage.getItem('token'),
+  getRefreshToken: () => localStorage.getItem('refreshToken'),
+  getTokenExpiry: () => parseInt(localStorage.getItem('tokenExpiry') || '0'),
+
+  setTokens: (accessToken, refreshToken, expiresIn) => {
+    localStorage.setItem('token', accessToken);
+    if (refreshToken) {
+      localStorage.setItem('refreshToken', refreshToken);
+    }
+    // 设置过期时间（提前5分钟刷新）
+    const expiry = Date.now() + (expiresIn - 300) * 1000;
+    localStorage.setItem('tokenExpiry', expiry.toString());
+  },
+
+  clearTokens: () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('tokenExpiry');
+    localStorage.removeItem('user');
+  },
+
+  isTokenExpired: () => {
+    const expiry = TokenManager.getTokenExpiry();
+    return Date.now() >= expiry;
+  },
+
+  shouldRefresh: () => {
+    const expiry = TokenManager.getTokenExpiry();
+    // 提前5分钟刷新
+    return Date.now() >= expiry - 300000;
+  }
+};
+
+// 刷新 Token 的 Promise（防止并发刷新）
+let refreshPromise = null;
+
+const refreshAccessToken = async () => {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  const refreshToken = TokenManager.getRefreshToken();
+  if (!refreshToken) {
+    throw new Error('No refresh token');
+  }
+
+  refreshPromise = axios.post(`${API_BASE}/auth/refresh`, {
+    refresh_token: refreshToken
+  }).then(response => {
+    const { access_token, expires_in } = response.data;
+    TokenManager.setTokens(access_token, null, expires_in);
+    refreshPromise = null;
+    return access_token;
+  }).catch(error => {
+    refreshPromise = null;
+    TokenManager.clearTokens();
+    throw error;
+  });
+
+  return refreshPromise;
+};
+
 // 共享的请求拦截器
-const addAuthToken = (config) => {
-  const token = localStorage.getItem('token');
+const addAuthToken = async (config) => {
+  // 跳过刷新请求本身
+  if (config.url?.includes('/auth/refresh') || config.url?.includes('/auth/login')) {
+    return config;
+  }
+
+  let token = TokenManager.getAccessToken();
+
+  // 检查是否需要刷新
+  if (token && TokenManager.shouldRefresh()) {
+    try {
+      token = await refreshAccessToken();
+    } catch (error) {
+      // 刷新失败，继续使用旧 token（可能已过期）
+      console.warn('Token refresh failed:', error);
+    }
+  }
+
   if (token) {
     config.headers = config.headers || {};
     config.headers.Authorization = `Bearer ${token}`;
@@ -28,22 +108,57 @@ const ragApi = axios.create({
 api.interceptors.request.use(addAuthToken);
 ragApi.interceptors.request.use(addAuthToken);
 
-api.interceptors.response.use(
-  response => response,
-  error => {
-    // 排除登录接口，避免循环重定向
-    const isLoginRequest = error.config?.url?.includes('/auth/login');
-    if (error.response?.status === 401 && !isLoginRequest) {
-      localStorage.removeItem('token');
+// 响应拦截器 - 处理 401 错误并尝试刷新
+const handleResponseError = async (error) => {
+  const originalRequest = error.config;
+
+  // 排除登录和刷新接口
+  const isAuthRequest = originalRequest?.url?.includes('/auth/login') ||
+                        originalRequest?.url?.includes('/auth/refresh');
+
+  if (error.response?.status === 401 && !isAuthRequest && !originalRequest._retry) {
+    originalRequest._retry = true;
+
+    try {
+      const newToken = await refreshAccessToken();
+      originalRequest.headers.Authorization = `Bearer ${newToken}`;
+      return axios(originalRequest);
+    } catch (refreshError) {
+      TokenManager.clearTokens();
       window.location.href = '/login';
+      return Promise.reject(refreshError);
     }
-    return Promise.reject(error);
   }
-);
+
+  // 其他 401 错误直接跳转登录
+  if (error.response?.status === 401 && !isAuthRequest) {
+    TokenManager.clearTokens();
+    window.location.href = '/login';
+  }
+
+  return Promise.reject(error);
+};
+
+api.interceptors.response.use(response => response, handleResponseError);
+ragApi.interceptors.response.use(response => response, handleResponseError);
 
 export const authAPI = {
-  login: (username, password) => api.post('/auth/login', { username, password }),
-  getMe: () => api.get('/auth/me')
+  login: async (username, password) => {
+    const response = await api.post('/auth/login', { username, password });
+    const { access_token, refresh_token, expires_in, user } = response.data;
+    TokenManager.setTokens(access_token, refresh_token, expires_in);
+    localStorage.setItem('user', JSON.stringify(user));
+    return response;
+  },
+  getMe: () => api.get('/auth/me'),
+  logout: () => {
+    TokenManager.clearTokens();
+    window.location.href = '/login';
+  },
+  changePassword: (oldPassword, newPassword) =>
+    api.post('/auth/change-password', null, {
+      params: { old_password: oldPassword, new_password: newPassword }
+    })
 };
 
 export const statsAPI = {
@@ -139,7 +254,7 @@ export const chatAPI = {
   query: (question, top_k = 5, use_history = true, group_names = null) =>
     ragApi.post('/query', { question, top_k, use_history, group_names }),
   queryStream: async function* (question, top_k = 5, use_history = true, group_names = null) {
-    const token = localStorage.getItem('token');
+    const token = TokenManager.getAccessToken();
     const response = await fetch(`${RAG_API_BASE}/query/stream`, {
       method: 'POST',
       headers: {
@@ -216,5 +331,5 @@ export const apiKeysAPI = {
   delete: (id) => api.delete(`/api-keys/${id}`)
 };
 
-export { ragApi };
+export { ragApi, TokenManager };
 export default api;
