@@ -114,7 +114,8 @@ export default function Chat() {
   const abortControllerRef = useRef(null);
   const sourceRefs = useRef({});  // 来源元素的引用
   const screens = useBreakpoint();
-  const isMobile = !screens.md;
+  // 判断是否为移动端 (< 768px)，screens 初始为空对象时默认桌面端
+  const isMobile = Object.keys(screens).length > 0 ? !screens.md : false;
 
   // 加载分组列表
   useEffect(() => {

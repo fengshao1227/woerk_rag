@@ -18,8 +18,9 @@ export default function Layout() {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const screens = useBreakpoint();
 
-  // 判断是否为移动端
-  const isMobile = !screens.lg;
+  // 判断是否为移动端 (< 768px)
+  // 注意: useBreakpoint 初始值是空对象，需要判断是否已加载
+  const isMobile = Object.keys(screens).length > 0 ? !screens.md : false;
 
   useEffect(() => {
     // 从 localStorage 获取用户信息
