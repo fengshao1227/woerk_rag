@@ -675,8 +675,19 @@ async def list_knowledge(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取知识条目列表，支持按分组筛选"""
+    """获取知识条目列表，支持按分组筛选和用户权限过滤"""
+    from sqlalchemy import or_
+
     query = db.query(KnowledgeEntry)
+
+    # 用户权限过滤：管理员可看全部，普通用户只看自己的 + 公开的
+    if current_user.role != "admin":
+        query = query.filter(
+            or_(
+                KnowledgeEntry.user_id == current_user.id,
+                KnowledgeEntry.is_public == True
+            )
+        )
 
     # 分组筛选
     if group_id is not None:
@@ -710,8 +721,28 @@ async def list_knowledge(
         .limit(page_size) \
         .all()
 
+    # 构建响应，添加 username 字段
+    knowledge_items = []
+    for item in items:
+        item_dict = {
+            "id": item.id,
+            "qdrant_id": item.qdrant_id,
+            "title": item.title,
+            "category": item.category,
+            "summary": item.summary,
+            "keywords": item.keywords,
+            "tech_stack": item.tech_stack,
+            "content_preview": item.content_preview,
+            "user_id": item.user_id,
+            "is_public": item.is_public if item.is_public is not None else True,
+            "username": item.user.username if item.user else None,
+            "created_at": item.created_at,
+            "updated_at": item.updated_at
+        }
+        knowledge_items.append(KnowledgeResponse(**item_dict))
+
     return KnowledgeListResponse(
-        items=[KnowledgeResponse.model_validate(item) for item in items],
+        items=knowledge_items,
         total=total,
         page=page,
         page_size=page_size,
@@ -775,10 +806,14 @@ async def update_knowledge(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """更新知识条目元数据"""
+    """更新知识条目元数据，需要权限检查"""
     entry = db.query(KnowledgeEntry).filter(KnowledgeEntry.id == knowledge_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="知识条目不存在")
+
+    # 权限检查：管理员可修改所有，普通用户只能修改自己的
+    if current_user.role != "admin" and entry.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权修改他人的知识条目")
 
     # 更新前先保存旧状态用于版本追踪
     old_metadata = {
@@ -826,10 +861,14 @@ async def delete_knowledge(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """删除知识条目（级联删除 MySQL + Qdrant）"""
+    """删除知识条目（级联删除 MySQL + Qdrant），需要权限检查"""
     entry = db.query(KnowledgeEntry).filter(KnowledgeEntry.id == knowledge_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="知识条目不存在")
+
+    # 权限检查：管理员可删除所有，普通用户只能删除自己的
+    if current_user.role != "admin" and entry.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权删除他人的知识条目")
 
     qdrant_id = entry.qdrant_id
 

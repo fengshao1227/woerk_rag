@@ -24,6 +24,7 @@ class KnowledgeTaskPayload:
     group_names: Optional[List[str]]
     user_id: int
     username: str
+    is_public: bool = False  # 新增：知识是否公开
 
 
 class KnowledgeTaskQueue:
@@ -171,7 +172,9 @@ class KnowledgeTaskQueue:
                     "type": "knowledge",
                     "category": extracted_info.get('type', payload.category),
                     "created_at": datetime.now().isoformat(),
-                    "file_path": f"knowledge/{content_hash[:8]}"
+                    "file_path": f"knowledge/{content_hash[:8]}",
+                    "user_id": payload.user_id,  # 新增：归属用户ID
+                    "is_public": payload.is_public  # 新增：是否公开
                 }
             )
 
@@ -190,7 +193,9 @@ class KnowledgeTaskQueue:
                     summary=extracted_info.get('summary', ''),
                     keywords=extracted_info.get('keywords', []),
                     tech_stack=extracted_info.get('tech_stack', []),
-                    content_preview=payload.content[:500] if payload.content else None
+                    content_preview=payload.content[:500] if payload.content else None,
+                    user_id=payload.user_id,  # 新增：归属用户ID
+                    is_public=payload.is_public  # 新增：是否公开
                 )
                 db.add(knowledge_entry)
                 db.commit()

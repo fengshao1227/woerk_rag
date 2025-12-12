@@ -25,6 +25,42 @@ def normalize_uuid(uuid_str: str) -> str:
     return uuid_str.replace("-", "").lower()
 
 
+def get_user_accessible_qdrant_ids(user_id: int) -> set:
+    """
+    获取用户可访问的所有 qdrant_id
+
+    规则: user_id = current_user.id OR is_public = true
+
+    Args:
+        user_id: 当前用户ID
+
+    Returns:
+        用户可访问的 qdrant_id 集合（已标准化格式）
+    """
+    if not user_id:
+        return set()
+
+    try:
+        from admin.database import SessionLocal
+        from admin.models import KnowledgeEntry
+        from sqlalchemy import or_
+
+        db = SessionLocal()
+        try:
+            entries = db.query(KnowledgeEntry.qdrant_id).filter(
+                or_(
+                    KnowledgeEntry.user_id == user_id,
+                    KnowledgeEntry.is_public == True
+                )
+            ).all()
+            return {normalize_uuid(e[0]) for e in entries if e[0]}
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"获取用户可访问知识失败: {e}")
+        return set()
+
+
 def get_group_qdrant_ids(group_ids: List[int]) -> List[str]:
     """
     根据分组ID列表获取所有关联的qdrant_id
@@ -192,6 +228,7 @@ class HybridSearch:
         top_k: int = TOP_K,
         filters: Optional[Dict] = None,
         group_ids: Optional[List[int]] = None,
+        user_id: Optional[int] = None,  # 新增：用户ID，用于权限过滤
         use_hybrid: bool = True,
         vector_weight: float = 0.7,
         keyword_weight: float = 0.3,
@@ -199,13 +236,14 @@ class HybridSearch:
         use_query_rewrite: bool = None,
     ) -> List[Dict]:
         """
-        混合检索（可选 Reranker 重排 + Query 改写）
+        混合检索（可选 Reranker 重排 + Query 改写 + 用户权限过滤）
 
         Args:
             query: 查询文本
             top_k: 返回结果数量
             filters: 过滤条件
             group_ids: 知识分组ID列表，只检索这些分组中的知识
+            user_id: 当前用户ID，用于多用户知识隔离（只检索用户私有+公开知识）
             use_hybrid: 是否使用混合检索
             vector_weight: 向量检索权重
             keyword_weight: 关键词检索权重
@@ -223,6 +261,23 @@ class HybridSearch:
                 logger.warning(f"分组 {group_ids} 中没有知识条目")
                 return []
             logger.info(f"分组过滤: 限制在 {len(allowed_qdrant_ids)} 个知识条目内检索")
+
+        # 处理用户权限过滤（多用户知识隔离）
+        if user_id:
+            user_accessible_ids = get_user_accessible_qdrant_ids(user_id)
+            if not user_accessible_ids:
+                logger.warning(f"用户 {user_id} 没有可访问的知识条目")
+                return []
+            # 与分组过滤取交集
+            if allowed_qdrant_ids:
+                allowed_qdrant_ids = allowed_qdrant_ids & user_accessible_ids
+                if not allowed_qdrant_ids:
+                    logger.warning(f"分组和用户权限交集为空")
+                    return []
+            else:
+                allowed_qdrant_ids = user_accessible_ids
+            logger.info(f"用户权限过滤: 限制在 {len(allowed_qdrant_ids)} 个知识条目内检索")
+
         # 确定是否使用 Reranker
         if use_reranker is None:
             use_reranker = RERANKER_ENABLE

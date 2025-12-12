@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Space, Tag, Upload, Spin } from 'antd';
-import { EditOutlined, DeleteOutlined, SearchOutlined, ExportOutlined, ImportOutlined, EyeOutlined, FolderOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Space, Tag, Upload, Spin, Switch } from 'antd';
+import { EditOutlined, DeleteOutlined, SearchOutlined, ExportOutlined, ImportOutlined, EyeOutlined, FolderOutlined, LockOutlined, GlobalOutlined } from '@ant-design/icons';
 import { knowledgeAPI, groupAPI } from '../services/api';
 
 export default function Knowledge() {
@@ -125,6 +125,19 @@ export default function Knowledge() {
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '标题', dataIndex: 'title', ellipsis: true },
     { title: '分类', dataIndex: 'category', render: v => <Tag>{v}</Tag> },
+    {
+      title: '可见性',
+      dataIndex: 'is_public',
+      width: 80,
+      render: (is_public) => (
+        is_public ? (
+          <Tag color="green" icon={<GlobalOutlined />}>公开</Tag>
+        ) : (
+          <Tag color="blue" icon={<LockOutlined />}>私有</Tag>
+        )
+      )
+    },
+    { title: '归属', dataIndex: 'username', width: 80, render: v => v || 'admin' },
     { title: '摘要', dataIndex: 'summary', ellipsis: true },
     { title: '关键词', dataIndex: 'keywords', render: v => v?.slice(0, 3).map(k => <Tag key={k} color="blue">{k}</Tag>) },
     { title: '创建时间', dataIndex: 'created_at', render: v => new Date(v).toLocaleString() },
@@ -214,6 +227,12 @@ export default function Knowledge() {
           </Form.Item>
           <Form.Item name="summary" label="摘要">
             <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="is_public" label="可见性" valuePropName="checked">
+            <Switch
+              checkedChildren={<><GlobalOutlined /> 公开</>}
+              unCheckedChildren={<><LockOutlined /> 私有</>}
+            />
           </Form.Item>
           <Form.Item>
             <Button type="primary" htmlType="submit" block>提交</Button>

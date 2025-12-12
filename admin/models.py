@@ -74,8 +74,14 @@ class KnowledgeEntry(Base):
     keywords = Column(JSON, nullable=True)
     tech_stack = Column(JSON, nullable=True)
     content_preview = Column(Text, nullable=True)
+    # 多用户隔离字段
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, default=1, index=True)
+    is_public = Column(Boolean, default=True, index=True)
     created_at = Column(TIMESTAMP, server_default=func.now(), index=True)
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    # 关联用户
+    user = relationship("User", foreign_keys=[user_id])
 
 
 class LLMUsageLog(Base):
@@ -137,11 +143,16 @@ class KnowledgeGroup(Base):
     color = Column(String(20), default='#1890ff')  # 用于前端显示的颜色
     icon = Column(String(50), default='folder')  # 图标名称
     is_active = Column(Boolean, default=True)
+    # 多用户隔离字段
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, default=1, index=True)
+    is_public = Column(Boolean, default=True, index=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
     # 关联分组项
     items = relationship("KnowledgeGroupItem", back_populates="group", cascade="all, delete-orphan")
+    # 关联用户
+    user = relationship("User", foreign_keys=[user_id])
 
 
 class KnowledgeGroupItem(Base):
@@ -237,6 +248,7 @@ class KnowledgeTask(Base):
     # 用户关联
     user_id = Column(Integer, nullable=True, index=True)
     username = Column(String(50), nullable=True)
+    is_public = Column(Boolean, default=False)  # 新增：知识是否公开
 
     # 时间戳
     created_at = Column(TIMESTAMP, server_default=func.now())

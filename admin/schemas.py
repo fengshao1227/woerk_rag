@@ -131,6 +131,7 @@ class KnowledgeUpdate(BaseModel):
     summary: Optional[str] = None
     keywords: Optional[List[str]] = None
     tech_stack: Optional[List[str]] = None
+    is_public: Optional[bool] = None  # 新增：可见性
 
 
 class KnowledgeResponse(BaseModel):
@@ -142,6 +143,9 @@ class KnowledgeResponse(BaseModel):
     keywords: Optional[List[str]]
     tech_stack: Optional[List[str]]
     content_preview: Optional[str]
+    user_id: Optional[int] = None  # 新增：归属用户ID
+    is_public: bool = True  # 新增：是否公开
+    username: Optional[str] = None  # 新增：归属用户名
     created_at: datetime
     updated_at: datetime
 
@@ -341,6 +345,7 @@ class KnowledgeGroupCreate(BaseModel):
     description: Optional[str] = None
     color: str = Field(default="#1890ff", pattern="^#[0-9a-fA-F]{6}$")
     icon: str = Field(default="folder", max_length=50)
+    is_public: bool = True  # 新增：是否公开
 
 
 class KnowledgeGroupUpdate(BaseModel):
@@ -350,6 +355,7 @@ class KnowledgeGroupUpdate(BaseModel):
     color: Optional[str] = Field(None, pattern="^#[0-9a-fA-F]{6}$")
     icon: Optional[str] = Field(None, max_length=50)
     is_active: Optional[bool] = None
+    is_public: Optional[bool] = None  # 新增：是否公开
 
 
 class KnowledgeGroupResponse(BaseModel):
@@ -361,6 +367,8 @@ class KnowledgeGroupResponse(BaseModel):
     icon: str
     is_active: bool
     is_default: bool = False  # 是否为默认分组（虚拟未分组）
+    user_id: Optional[int] = None  # 新增：归属用户ID
+    is_public: bool = True  # 新增：是否公开
     items_count: int = 0  # 分组内知识条目数量
     created_at: datetime
     updated_at: datetime

@@ -200,6 +200,7 @@ class AddKnowledgeRequest(BaseModel):
     title: Optional[str] = None
     category: Optional[str] = "general"  # 分类：project, skill, experience, note 等
     group_names: Optional[List[str]] = None  # 添加后自动加入这些分组
+    is_public: bool = False  # 新增：是否公开（默认私有）
 
 
 class AddKnowledgeResponse(BaseModel):
@@ -253,6 +254,7 @@ async def query(request: QueryRequest, http_request: Request, current_user = Dep
             top_k=request.top_k,
             filters=request.filters,
             group_ids=effective_group_ids,
+            user_id=current_user.id,  # 传入用户ID进行权限过滤
             use_history=request.use_history
         )
 
@@ -374,12 +376,13 @@ async def search(request: SearchRequest, http_request: Request, current_user = D
     effective_group_ids = resolve_group_ids(request.group_ids, request.group_names)
 
     try:
-        # 使用 qa_chain 的 retriever（HybridSearch）支持分组过滤
+        # 使用 qa_chain 的 retriever（HybridSearch）支持分组过滤和用户权限过滤
         results = qa_chain.retriever.search(
             query=request.query,
             top_k=request.top_k,
             filters=request.filters,
             group_ids=effective_group_ids,
+            user_id=current_user.id,  # 传入用户ID进行权限过滤
             use_hybrid=True
         )
 
@@ -530,7 +533,8 @@ async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, cur
                 category=request.category or 'general',
                 group_names=request.group_names,
                 user_id=current_user.id,
-                username=current_user.username
+                username=current_user.username,
+                is_public=request.is_public  # 新增：是否公开
             )
             db.add(task)
             db.commit()
@@ -543,7 +547,8 @@ async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, cur
             category=request.category or 'general',
             group_names=request.group_names,
             user_id=current_user.id,
-            username=current_user.username
+            username=current_user.username,
+            is_public=request.is_public  # 新增：是否公开
         )
 
         task_queue = get_task_queue()

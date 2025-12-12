@@ -162,6 +162,7 @@ class QAChatChain:
         top_k: int = 5,
         filters: Dict = None,
         group_ids: List[int] = None,
+        user_id: int = None,  # 新增：用户ID，用于多用户知识隔离
         use_history: bool = True,
         use_reranker: bool = None,
         use_cache: bool = True
@@ -174,6 +175,7 @@ class QAChatChain:
             top_k: 检索结果数量
             filters: 过滤条件
             group_ids: 知识分组ID列表，只在指定分组中检索
+            user_id: 当前用户ID，用于多用户知识隔离（只检索用户私有+公开知识）
             use_history: 是否使用对话历史
             use_reranker: 是否使用 Reranker（None 时使用配置默认值）
             use_cache: 是否使用语义缓存
@@ -181,16 +183,19 @@ class QAChatChain:
         Returns:
             包含答案和检索结果的字典
         """
-        # 1. 检查语义缓存（支持分组过滤）
+        # 1. 检查语义缓存（支持分组过滤和用户过滤）
         cache_key = question
         if group_ids:
             # 将分组信息加入缓存键，确保不同分组的查询不会混淆
-            cache_key = f"{question}||groups:{','.join(sorted(group_ids))}"
+            cache_key = f"{question}||groups:{','.join(str(g) for g in sorted(group_ids))}"
+        if user_id:
+            # 将用户ID加入缓存键，确保不同用户的查询不会混淆
+            cache_key = f"{cache_key}||user:{user_id}"
 
         if use_cache and self.semantic_cache:
             cached = self.semantic_cache.get(cache_key)
             if cached:
-                logger.info(f"语义缓存命中: {question[:50]}..." + (f" [分组: {group_ids}]" if group_ids else ""))
+                logger.info(f"语义缓存命中: {question[:50]}..." + (f" [分组: {group_ids}]" if group_ids else "") + (f" [用户: {user_id}]" if user_id else ""))
                 return {
                     "answer": cached["answer"],
                     "sources": cached.get("sources", []),
@@ -199,13 +204,14 @@ class QAChatChain:
                     "cache_similarity": cached.get("similarity", 0.0)
                 }
 
-        # 2. 检索相关文档
-        logger.info(f"检索问题: {question}" + (f"，分组过滤: {group_ids}" if group_ids else ""))
+        # 2. 检索相关文档（传入 user_id 进行权限过滤）
+        logger.info(f"检索问题: {question}" + (f"，分组过滤: {group_ids}" if group_ids else "") + (f"，用户过滤: {user_id}" if user_id else ""))
         results = self.retriever.search(
             question,
             top_k=top_k,
             filters=filters,
             group_ids=group_ids,
+            user_id=user_id,  # 传入用户ID
             use_reranker=use_reranker
         )
 
@@ -346,7 +352,7 @@ class QAChatChain:
         # 检查语义缓存（支持分组过滤）
         cache_key = question
         if group_ids:
-            cache_key = f"{question}||groups:{','.join(sorted(group_ids))}"
+            cache_key = f"{question}||groups:{','.join(str(g) for g in sorted(group_ids))}"
 
         if self.semantic_cache:
             cached = self.semantic_cache.get(cache_key)
