@@ -315,13 +315,15 @@ export default function Groups() {
       width: 100,
       render: (v, record) => record.is_default ? (
         <Tag icon={<GlobalOutlined />} color="default">系统</Tag>
-      ) : (
+      ) : record.can_edit ? (
         <Switch
           checked={v}
           checkedChildren={<><GlobalOutlined /> 公开</>}
           unCheckedChildren={<><LockOutlined /> 私有</>}
           onChange={() => handleTogglePublic(record)}
         />
+      ) : (
+        v ? <Tag icon={<GlobalOutlined />} color="green">公开</Tag> : <Tag icon={<LockOutlined />} color="blue">私有</Tag>
       )
     },
     {
@@ -341,10 +343,12 @@ export default function Groups() {
       width: 220,
       render: (_, record) => (
         <Space>
-          <Tooltip title={record.is_default ? "分配到其他分组" : "管理条目"}>
-            <Button size="small" icon={<AppstoreOutlined />} onClick={() => handleManageItems(record)} />
-          </Tooltip>
-          {!record.is_default && (
+          {record.can_edit && (
+            <Tooltip title={record.is_default ? "分配到其他分组" : "管理条目"}>
+              <Button size="small" icon={<AppstoreOutlined />} onClick={() => handleManageItems(record)} />
+            </Tooltip>
+          )}
+          {!record.is_default && record.can_edit && (
             <>
               <Tooltip title="共享设置">
                 <Button size="small" icon={<ShareAltOutlined />} onClick={() => handleManageShares(record)} />
@@ -358,6 +362,9 @@ export default function Groups() {
                 </Tooltip>
               </Popconfirm>
             </>
+          )}
+          {!record.can_edit && (
+            <Tag color="default">只读</Tag>
           )}
         </Space>
       )

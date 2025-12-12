@@ -378,6 +378,7 @@ class KnowledgeGroupResponse(BaseModel):
     is_default: bool = False  # 是否为默认分组（虚拟未分组）
     user_id: Optional[int] = None  # 新增：归属用户ID
     is_public: bool = True  # 新增：是否公开
+    can_edit: bool = False  # 新增：当前用户是否可编辑
     items_count: int = 0  # 分组内知识条目数量
     created_at: datetime
     updated_at: datetime

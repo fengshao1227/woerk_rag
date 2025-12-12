@@ -1806,14 +1806,58 @@ async def list_groups(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取知识分组列表，首行为虚拟的未分组"""
-    groups = db.query(KnowledgeGroup).filter(KnowledgeGroup.is_active == True).order_by(KnowledgeGroup.id.desc()).all()
+    """获取知识分组列表，根据用户权限过滤
 
-    # 计算未分组知识数量：所有不在 KnowledgeGroupItem 中的 KnowledgeEntry
+    权限规则：
+    1. 管理员可看全部分组
+    2. 普通用户可看：
+       - 自己创建的分组
+       - 公开分组
+       - 共享给自己的分组
+    """
+    from sqlalchemy import or_
+
+    query = db.query(KnowledgeGroup).filter(KnowledgeGroup.is_active == True)
+
+    # 用户权限过滤
+    if current_user.role != "admin":
+        # 获取共享给当前用户的分组ID
+        shared_group_ids = db.query(GroupShare.group_id).filter(
+            GroupShare.shared_with_user_id == current_user.id
+        ).all()
+        shared_group_ids = [g[0] for g in shared_group_ids]
+
+        query = query.filter(
+            or_(
+                KnowledgeGroup.user_id == current_user.id,  # 自己创建的
+                KnowledgeGroup.is_public == True,  # 公开的
+                KnowledgeGroup.id.in_(shared_group_ids) if shared_group_ids else False  # 共享给自己的
+            )
+        )
+
+    groups = query.order_by(KnowledgeGroup.id.desc()).all()
+
+    # 获取用户有 write 权限的共享分组
+    user_write_group_ids = set()
+    if current_user.role != "admin":
+        shared_writes = db.query(GroupShare.group_id).filter(
+            GroupShare.shared_with_user_id == current_user.id,
+            GroupShare.permission == 'write'
+        ).all()
+        user_write_group_ids = {s[0] for s in shared_writes}
+
+    # 计算未分组知识数量
     grouped_qdrant_ids = db.query(KnowledgeGroupItem.qdrant_id).distinct().subquery()
-    ungrouped_count = db.query(func.count(KnowledgeEntry.id)).filter(
-        ~KnowledgeEntry.qdrant_id.in_(grouped_qdrant_ids)
-    ).scalar() or 0
+    if current_user.role != "admin":
+        # 普通用户只计算自己创建的未分组知识
+        ungrouped_count = db.query(func.count(KnowledgeEntry.id)).filter(
+            ~KnowledgeEntry.qdrant_id.in_(grouped_qdrant_ids),
+            KnowledgeEntry.user_id == current_user.id
+        ).scalar() or 0
+    else:
+        ungrouped_count = db.query(func.count(KnowledgeEntry.id)).filter(
+            ~KnowledgeEntry.qdrant_id.in_(grouped_qdrant_ids)
+        ).scalar() or 0
 
     # 虚拟默认分组（未分组）
     now = datetime.now()
@@ -1827,6 +1871,7 @@ async def list_groups(
         is_default=True,
         is_public=True,
         user_id=None,
+        can_edit=current_user.role == "admin",  # 只有管理员可管理未分组
         items_count=ungrouped_count,
         created_at=now,
         updated_at=now
@@ -1835,6 +1880,17 @@ async def list_groups(
     result = [default_group]  # 未分组放在首位
     for g in groups:
         items_count = db.query(func.count(KnowledgeGroupItem.id)).filter(KnowledgeGroupItem.group_id == g.id).scalar() or 0
+
+        # 判断用户是否可以编辑该分组
+        # 规则：管理员可编辑所有，普通用户可编辑：1.自己创建的 2.有write权限的共享分组
+        can_edit = False
+        if current_user.role == "admin":
+            can_edit = True
+        elif g.user_id == current_user.id:
+            can_edit = True
+        elif g.id in user_write_group_ids:
+            can_edit = True
+
         result.append(KnowledgeGroupResponse(
             id=g.id,
             name=g.name,
@@ -1845,6 +1901,7 @@ async def list_groups(
             is_default=False,
             is_public=g.is_public,
             user_id=g.user_id,
+            can_edit=can_edit,  # 新增：是否可编辑
             items_count=items_count,
             created_at=g.created_at,
             updated_at=g.updated_at
