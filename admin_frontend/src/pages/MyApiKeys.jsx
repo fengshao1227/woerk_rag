@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, message, Popconfirm, Space, Tag, Tooltip, DatePicker, Typography, Card, Spin, Alert } from 'antd';
-import { PlusOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, DownloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, CodeOutlined } from '@ant-design/icons';
 import { myApiKeysAPI } from '../services/api';
 import useResponsive from '../hooks/useResponsive';
 import dayjs from 'dayjs';
@@ -60,34 +60,11 @@ export default function MyApiKeys() {
     message.success('已复制到剪贴板');
   };
 
-  const handleDownload = (record) => {
-    // 获取 token 用于认证
-    const token = localStorage.getItem('token');
-    if (!token) {
-      message.error('请先登录');
-      return;
-    }
-    // 使用 fetch 下载文件（需要带认证头）
-    const url = myApiKeysAPI.downloadUrl(record.id);
-    fetch(url, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(response => {
-        if (!response.ok) throw new Error('下载失败');
-        return response.blob();
-      })
-      .then(blob => {
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        const safeName = record.name.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_').slice(0, 20);
-        link.download = `rag_mcp_server_${safeName}.zip`;
-        link.click();
-        URL.revokeObjectURL(link.href);
-        message.success('MCP 服务器下载成功');
-      })
-      .catch(err => {
-        message.error(err.message || '下载失败');
-      });
+  // 生成 claude mcp add 命令并复制
+  const handleCopyInstallCommand = (record) => {
+    const command = `claude mcp add rag-knowledge -s user --transport stdio -e RAG_API_KEY=${record.key} -- uvx --from git+https://github.com/fengshao1227/woerk_rag.git rag-mcp`;
+    navigator.clipboard.writeText(command);
+    message.success('安装命令已复制，请在终端粘贴执行');
   };
 
   const columns = [
@@ -167,8 +144,8 @@ export default function MyApiKeys() {
       width: 140,
       render: (_, record) => (
         <Space size={4}>
-          <Tooltip title="下载 MCP 服务器">
-            <Button icon={<DownloadOutlined />} size="small" onClick={() => handleDownload(record)} />
+          <Tooltip title="复制安装命令">
+            <Button icon={<CodeOutlined />} size="small" onClick={() => handleCopyInstallCommand(record)} />
           </Tooltip>
           <Popconfirm
             title="确定要删除这个卡密吗？"
@@ -222,7 +199,7 @@ export default function MyApiKeys() {
             </Space>
           </div>
           <Space direction="vertical" size={4}>
-            <Button size="small" icon={<DownloadOutlined />} onClick={() => handleDownload(record)}>下载</Button>
+            <Button size="small" icon={<CodeOutlined />} onClick={() => handleCopyInstallCommand(record)}>安装</Button>
             <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
               <Button size="small" danger icon={<DeleteOutlined />} />
             </Popconfirm>
@@ -263,31 +240,11 @@ export default function MyApiKeys() {
               使用此卡密连接 Claude Desktop，<Text strong>只能访问你自己的知识、公开知识和被共享的知识</Text>。
             </p>
             <p style={{ margin: '8px 0' }}>
-              配置方法：将卡密设置为 MCP Server 环境变量 <Text code>RAG_API_KEY</Text>
+              <Text strong>一键安装：</Text>点击卡密操作栏的 <CodeOutlined /> 按钮复制安装命令，在终端粘贴执行即可。
             </p>
-            <details style={{ marginTop: 8 }}>
-              <summary style={{ cursor: 'pointer', color: '#1890ff' }}>查看 Claude Desktop 配置示例</summary>
-              <pre style={{
-                background: '#f5f5f5',
-                padding: 12,
-                borderRadius: 4,
-                marginTop: 8,
-                fontSize: 12,
-                overflow: 'auto'
-              }}>
-{`{
-  "mcpServers": {
-    "rag-knowledge": {
-      "command": "python",
-      "args": ["/path/to/rag/mcp_server/server.py"],
-      "env": {
-        "RAG_API_KEY": "你的卡密"
-      }
-    }
-  }
-}`}
-              </pre>
-            </details>
+            <p style={{ margin: '4px 0', color: '#666' }}>
+              需要先安装 <Text code>uv</Text>：<Text code copyable={{ text: 'curl -LsSf https://astral.sh/uv/install.sh | sh' }}>curl -LsSf https://astral.sh/uv/install.sh | sh</Text>
+            </p>
           </div>
         }
       />
