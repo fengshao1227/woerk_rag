@@ -1,16 +1,88 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, message, Popconfirm, Space, Tag, Tooltip, DatePicker, Typography, Card, Spin, Alert } from 'antd';
-import { PlusOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, CodeOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, CodeOutlined, BookOutlined } from '@ant-design/icons';
 import { myApiKeysAPI } from '../services/api';
 import useResponsive from '../hooks/useResponsive';
 import dayjs from 'dayjs';
 
 const { Paragraph, Text } = Typography;
 
+// RAG 知识库使用规则
+const RAG_USAGE_RULES = `## RAG知识库使用规则（rag-knowledge MCP）
+
+### 核心原则
+
+**知识库是项目记忆的核心，必须持续沉淀细节知识！**
+
+---
+
+### 一、强制工作流程
+
+1. **先查RAG** → 使用 \`search(query, group_names="项目名")\` 查询
+2. **RAG 无结果** → 才使用其他工具搜索代码
+3. **任务完成** → **必须** 用 \`add_knowledge\` 保存细节到知识库
+
+---
+
+### 二、知识沉淀（最重要！）
+
+#### 强制添加知识的场景
+
+| 场景 | 必须记录的内容 |
+|------|---------------|
+| 阅读代码 | 模块职责、关键类/函数、调用关系、设计模式 |
+| 实现功能 | 实现步骤、核心代码片段、涉及的文件 |
+| 修复 Bug | 问题原因、解决方案、踩坑点 |
+| 技术决策 | 选型原因、优缺点对比、最佳实践 |
+| 发现规律 | 代码规范、命名约定、架构模式 |
+
+#### add_knowledge 参数（强制规范）
+
+\`\`\`
+add_knowledge(
+    content="详细内容",
+    category="project|skill|experience|note",
+    group_names="项目名"  # ⚠️ 强制指定！
+)
+\`\`\`
+
+**参数说明**:
+- \`content\` - 知识内容（500-1500字为宜）
+- \`category\` - 分类：project(项目)/skill(技能)/experience(经验)/note(笔记)
+- \`group_names\` - **必填**！项目名称，多个用逗号分隔
+
+#### 细节要求
+
+- **每次只记录一个主题**，避免混杂
+- **包含具体代码**，不要只写概念
+- **标注文件路径**，方便定位
+- **记录踩坑点**，避免重复犯错
+- **说明"为什么"**，不只记录"是什么"
+
+---
+
+### 三、查询规范
+
+| 工具 | 用途 | 示例 |
+|------|------|------|
+| \`search\` | 快速检索（优先） | \`search("邮件发送", group_names="my-project")\` |
+| \`query\` | 需要AI 总结时 | \`query("整体架构是怎样的", group_names="my-app")\` |
+
+---
+
+### 四、分组管理
+
+- \`my-project\` - 示例后端项目
+- \`my-app\` - 示例前端项目
+- 项目相关知识 → 必须指定 \`group_names\`
+- 通用技术知识 → 可不指定，存入全局库
+`;
+
 export default function MyApiKeys() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [rulesModalOpen, setRulesModalOpen] = useState(false);
   const [form] = Form.useForm();
   const { isMobile } = useResponsive();
 
@@ -215,17 +287,26 @@ export default function MyApiKeys() {
         <h2 style={{ margin: 0, fontSize: isMobile ? 16 : 20, display: 'flex', alignItems: 'center', gap: 8 }}>
           <KeyOutlined /> 我的卡密
         </h2>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          size={isMobile ? 'small' : 'middle'}
-          onClick={() => {
-            form.resetFields();
-            setModalOpen(true);
-          }}
-        >
-          {isMobile ? '创建' : '创建卡密'}
-        </Button>
+        <Space size={8}>
+          <Button
+            icon={<BookOutlined />}
+            size={isMobile ? 'small' : 'middle'}
+            onClick={() => setRulesModalOpen(true)}
+          >
+            {isMobile ? '规则' : '推荐规则'}
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            size={isMobile ? 'small' : 'middle'}
+            onClick={() => {
+              form.resetFields();
+              setModalOpen(true);
+            }}
+          >
+            {isMobile ? '创建' : '创建卡密'}
+          </Button>
+        </Space>
       </div>
 
       <Alert
@@ -310,6 +391,50 @@ export default function MyApiKeys() {
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 推荐规则弹窗 */}
+      <Modal
+        title={<><BookOutlined /> RAG 知识库使用规则</>}
+        open={rulesModalOpen}
+        onCancel={() => setRulesModalOpen(false)}
+        footer={[
+          <Button key="copy" icon={<CopyOutlined />} onClick={() => {
+            navigator.clipboard.writeText(RAG_USAGE_RULES);
+            message.success('规则已复制到剪贴板');
+          }}>
+            复制规则
+          </Button>,
+          <Button key="close" type="primary" onClick={() => setRulesModalOpen(false)}>
+            关闭
+          </Button>
+        ]}
+        width={isMobile ? '95vw' : 800}
+      >
+        <div style={{
+          maxHeight: '60vh',
+          overflow: 'auto',
+          padding: 16,
+          background: '#fafafa',
+          borderRadius: 8,
+          fontSize: isMobile ? 12 : 14
+        }}>
+          <pre style={{
+            whiteSpace: 'pre-wrap',
+            wordWrap: 'break-word',
+            margin: 0,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+          }}>
+            {RAG_USAGE_RULES}
+          </pre>
+        </div>
+        <Alert
+          type="success"
+          showIcon
+          style={{ marginTop: 16 }}
+          message="使用建议"
+          description="将此规则复制到你的项目 CLAUDE.md 或 .cursorrules 文件中，让 AI 助手遵循知识库使用规范。"
+        />
       </Modal>
     </div>
   );
