@@ -589,6 +589,7 @@ class MCPApiKeyCreate(BaseModel):
     """创建卡密请求"""
     name: str = Field(..., min_length=1, max_length=100, description="卡密名称/备注")
     expires_at: Optional[datetime] = Field(None, description="过期时间（可选）")
+    user_id: Optional[int] = Field(None, description="绑定用户ID（管理员可指定，普通用户自动绑定自己）")
 
 
 class MCPApiKeyUpdate(BaseModel):
@@ -596,6 +597,7 @@ class MCPApiKeyUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     is_active: Optional[bool] = None
     expires_at: Optional[datetime] = None
+    user_id: Optional[int] = Field(None, description="绑定用户ID（仅管理员可修改）")
 
 
 class MCPApiKeyResponse(BaseModel):
@@ -603,6 +605,8 @@ class MCPApiKeyResponse(BaseModel):
     id: int
     key: str
     name: str
+    user_id: Optional[int] = None
+    username: Optional[str] = None  # 关联用户名
     is_active: bool
     expires_at: Optional[datetime]
     last_used_at: Optional[datetime]

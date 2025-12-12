@@ -44,6 +44,7 @@ export default function Layout() {
     { key: '/agent', icon: <RobotOutlined />, label: '智能Agent' },
     { key: '/knowledge', icon: <BookOutlined />, label: '知识库' },
     { key: '/groups', icon: <FolderOutlined />, label: '知识分组' },
+    { key: '/my-api-keys', icon: <KeyOutlined />, label: '我的卡密' },
   ];
 
   // 管理员专属菜单项

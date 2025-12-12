@@ -2629,15 +2629,97 @@ def generate_api_key() -> str:
     return f"rag_sk_{secrets.token_hex(24)}"
 
 
+def build_api_key_response(api_key: MCPApiKey, db: Session) -> MCPApiKeyResponse:
+    """构建卡密响应，包含关联用户名"""
+    username = None
+    if api_key.user_id:
+        user = db.query(User).filter(User.id == api_key.user_id).first()
+        username = user.username if user else None
+    return MCPApiKeyResponse(
+        id=api_key.id,
+        key=api_key.key,
+        name=api_key.name,
+        user_id=api_key.user_id,
+        username=username,
+        is_active=api_key.is_active,
+        expires_at=api_key.expires_at,
+        last_used_at=api_key.last_used_at,
+        usage_count=api_key.usage_count,
+        created_at=api_key.created_at,
+        updated_at=api_key.updated_at
+    )
+
+
+# ============================================================
+# 用户级卡密管理（普通用户可自行管理自己的卡密）
+# ============================================================
+@router.get("/my-api-keys", response_model=MCPApiKeyListResponse)
+async def list_my_api_keys(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的卡密列表"""
+    keys = db.query(MCPApiKey).filter(
+        MCPApiKey.user_id == current_user.id
+    ).order_by(MCPApiKey.created_at.desc()).all()
+    return MCPApiKeyListResponse(
+        items=[build_api_key_response(k, db) for k in keys],
+        total=len(keys)
+    )
+
+
+@router.post("/my-api-keys", response_model=MCPApiKeyResponse)
+async def create_my_api_key(
+    data: MCPApiKeyCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """创建当前用户的卡密（自动绑定当前用户）"""
+    api_key = MCPApiKey(
+        key=generate_api_key(),
+        name=data.name,
+        user_id=current_user.id,  # 自动绑定当前用户
+        expires_at=data.expires_at
+    )
+    db.add(api_key)
+    db.commit()
+    db.refresh(api_key)
+    return build_api_key_response(api_key, db)
+
+
+@router.delete("/my-api-keys/{key_id}", response_model=MessageResponse)
+async def delete_my_api_key(
+    key_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """删除当前用户的卡密"""
+    api_key = db.query(MCPApiKey).filter(
+        MCPApiKey.id == key_id,
+        MCPApiKey.user_id == current_user.id  # 只能删除自己的卡密
+    ).first()
+    if not api_key:
+        raise HTTPException(status_code=404, detail="卡密不存在或无权删除")
+
+    db.delete(api_key)
+    db.commit()
+    return MessageResponse(message="卡密已删除")
+
+
+# ============================================================
+# 管理员卡密管理（管理员可管理所有卡密）
+# ============================================================
 @router.get("/api-keys", response_model=MCPApiKeyListResponse)
 async def list_api_keys(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取所有卡密列表"""
+    """获取所有卡密列表（仅管理员）"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
     keys = db.query(MCPApiKey).order_by(MCPApiKey.created_at.desc()).all()
     return MCPApiKeyListResponse(
-        items=[MCPApiKeyResponse.model_validate(k) for k in keys],
+        items=[build_api_key_response(k, db) for k in keys],
         total=len(keys)
     )
 
@@ -2648,16 +2730,19 @@ async def create_api_key(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """创建新卡密"""
+    """创建新卡密（仅管理员，可指定绑定用户）"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
     api_key = MCPApiKey(
         key=generate_api_key(),
         name=data.name,
+        user_id=data.user_id,  # 管理员可指定绑定用户
         expires_at=data.expires_at
     )
     db.add(api_key)
     db.commit()
     db.refresh(api_key)
-    return MCPApiKeyResponse.model_validate(api_key)
+    return build_api_key_response(api_key, db)
 
 
 @router.get("/api-keys/{key_id}", response_model=MCPApiKeyResponse)
@@ -2666,11 +2751,13 @@ async def get_api_key(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取卡密详情"""
+    """获取卡密详情（仅管理员）"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
     api_key = db.query(MCPApiKey).filter(MCPApiKey.id == key_id).first()
     if not api_key:
         raise HTTPException(status_code=404, detail="卡密不存在")
-    return MCPApiKeyResponse.model_validate(api_key)
+    return build_api_key_response(api_key, db)
 
 
 @router.put("/api-keys/{key_id}", response_model=MCPApiKeyResponse)
@@ -2680,7 +2767,9 @@ async def update_api_key(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """更新卡密"""
+    """更新卡密（仅管理员）"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
     api_key = db.query(MCPApiKey).filter(MCPApiKey.id == key_id).first()
     if not api_key:
         raise HTTPException(status_code=404, detail="卡密不存在")
@@ -2691,7 +2780,7 @@ async def update_api_key(
 
     db.commit()
     db.refresh(api_key)
-    return MCPApiKeyResponse.model_validate(api_key)
+    return build_api_key_response(api_key, db)
 
 
 @router.delete("/api-keys/{key_id}", response_model=MessageResponse)
@@ -2700,7 +2789,9 @@ async def delete_api_key(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """删除卡密"""
+    """删除卡密（仅管理员）"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
     api_key = db.query(MCPApiKey).filter(MCPApiKey.id == key_id).first()
     if not api_key:
         raise HTTPException(status_code=404, detail="卡密不存在")

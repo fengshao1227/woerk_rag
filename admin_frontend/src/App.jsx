@@ -13,6 +13,7 @@ import Agent from './pages/Agent';
 import Evaluation from './pages/Evaluation';
 import EmbeddingProviders from './pages/EmbeddingProviders';
 import ApiKeys from './pages/ApiKeys';
+import MyApiKeys from './pages/MyApiKeys';
 import Users from './pages/Users';
 
 function PrivateRoute({ children }) {
@@ -53,6 +54,7 @@ export default function App() {
             <Route path="agent" element={<Agent />} />
             <Route path="knowledge" element={<Knowledge />} />
             <Route path="groups" element={<Groups />} />
+            <Route path="my-api-keys" element={<MyApiKeys />} />
 
             {/* 仅管理员可访问 */}
             <Route path="channels" element={<AdminRoute><Channels /></AdminRoute>} />

@@ -331,5 +331,12 @@ export const apiKeysAPI = {
   delete: (id) => api.delete(`/api-keys/${id}`)
 };
 
+// 用户级卡密管理 API（普通用户管理自己的卡密）
+export const myApiKeysAPI = {
+  list: () => api.get('/my-api-keys'),
+  create: (data) => api.post('/my-api-keys', data),
+  delete: (id) => api.delete(`/my-api-keys/${id}`)
+};
+
 export { ragApi, TokenManager };
 export default api;

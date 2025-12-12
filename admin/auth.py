@@ -129,8 +129,13 @@ async def get_current_user(
     if api_key:
         key_record = verify_api_key(api_key, db)
         if key_record:
-            # API Key 验证成功，返回一个虚拟的管理员用户对象
-            # MCP 调用有完整的 API 权限
+            # 如果卡密绑定了用户，返回该用户（继承用户权限）
+            if key_record.user_id:
+                bound_user = db.query(User).filter(User.id == key_record.user_id).first()
+                if bound_user and bound_user.is_active:
+                    return bound_user
+                # 用户不存在或已禁用，降级为管理员权限
+            # 未绑定用户的卡密（旧卡密），返回管理员用户以保持向后兼容
             admin_user = db.query(User).filter(User.role == "admin").first()
             if admin_user:
                 return admin_user
