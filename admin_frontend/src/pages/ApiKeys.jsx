@@ -83,13 +83,22 @@ export default function ApiKeys() {
       title: '名称',
       dataIndex: 'name',
       key: 'name',
-      width: 180,
+      width: 150,
+    },
+    {
+      title: '绑定用户',
+      dataIndex: 'username',
+      key: 'username',
+      width: 120,
+      render: (username, record) => username
+        ? <Tag color="blue">{username}</Tag>
+        : <Tag color="gold">管理员级</Tag>
     },
     {
       title: '卡密',
       dataIndex: 'key',
       key: 'key',
-      width: 300,
+      width: 280,
       render: (key) => (
         <Space>
           <Paragraph
@@ -139,14 +148,14 @@ export default function ApiKeys() {
       title: '最后使用',
       dataIndex: 'last_used_at',
       key: 'last_used_at',
-      width: 160,
+      width: 140,
       render: (val) => val ? dayjs(val).format('MM-DD HH:mm') : '-'
     },
     {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
-      width: 160,
+      width: 140,
       render: (val) => dayjs(val).format('YYYY-MM-DD HH:mm')
     },
     {
@@ -183,6 +192,10 @@ export default function ApiKeys() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <KeyOutlined style={{ color: '#1890ff' }} />
               <span style={{ fontWeight: 500 }}>{record.name}</span>
+              {record.username
+                ? <Tag color="blue" style={{ marginLeft: 4 }}>{record.username}</Tag>
+                : <Tag color="gold" style={{ marginLeft: 4 }}>管理员级</Tag>
+              }
             </div>
             <div style={{ fontSize: 12, color: '#666', marginBottom: 8, fontFamily: 'monospace' }}>
               {record.key.slice(0, 8)}...{record.key.slice(-6)}
