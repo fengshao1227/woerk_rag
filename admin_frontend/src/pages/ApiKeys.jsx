@@ -390,10 +390,7 @@ export default function ApiKeys() {
           setSelectedKey(null);
         }}
         footer={[
-          <Button key="close" onClick={() => setInstallModalOpen(false)}>关闭</Button>,
-          <Button key="copy" type="primary" icon={<CopyOutlined />} onClick={() => handleCopyInstallCommand(installMode)}>
-            复制命令
-          </Button>
+          <Button key="close" type="primary" onClick={() => setInstallModalOpen(false)}>关闭</Button>
         ]}
         width={isMobile ? '95vw' : 700}
       >
@@ -474,19 +471,36 @@ export default function ApiKeys() {
           <Text strong>安装命令：</Text>
           <div style={{
             marginTop: 8,
-            padding: 12,
+            padding: '8px 12px',
             background: '#f5f5f5',
             borderRadius: 6,
-            fontFamily: 'monospace',
-            fontSize: isMobile ? 11 : 13,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-            lineHeight: 1.6
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8
           }}>
-            {selectedKey && (installMode === 'remote'
-              ? getRemoteInstallCommand(selectedKey.key)
-              : getLocalInstallCommand(selectedKey.key)
-            )}
+            <Text
+              code
+              style={{
+                flex: 1,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontSize: isMobile ? 11 : 13
+              }}
+            >
+              {selectedKey && (installMode === 'remote'
+                ? getRemoteInstallCommand(selectedKey.key)
+                : getLocalInstallCommand(selectedKey.key)
+              )}
+            </Text>
+            <Button
+              type="primary"
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => handleCopyInstallCommand(installMode)}
+            >
+              复制
+            </Button>
           </div>
         </div>
 
