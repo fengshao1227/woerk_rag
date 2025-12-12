@@ -9,7 +9,6 @@ import Knowledge from './pages/Knowledge';
 import Groups from './pages/Groups';
 import UsageStats from './pages/UsageStats';
 import Chat from './pages/Chat';
-import Agent from './pages/Agent';
 import Evaluation from './pages/Evaluation';
 import EmbeddingProviders from './pages/EmbeddingProviders';
 import ApiKeys from './pages/ApiKeys';
@@ -51,7 +50,6 @@ export default function App() {
             {/* 所有用户可访问 */}
             <Route index element={<Dashboard />} />
             <Route path="chat" element={<Chat />} />
-            <Route path="agent" element={<Agent />} />
             <Route path="knowledge" element={<Knowledge />} />
             <Route path="groups" element={<Groups />} />
             <Route path="my-api-keys" element={<MyApiKeys />} />

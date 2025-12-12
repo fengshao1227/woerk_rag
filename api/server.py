@@ -401,6 +401,30 @@ async def search(request: SearchRequest, http_request: Request, current_user = D
             use_hybrid=True
         )
 
+        # 从 MySQL 中补充 title 和 category 信息
+        if results:
+            db = SessionLocal()
+            try:
+                # 收集所有 qdrant_id
+                qdrant_ids = [r.get("id") for r in results if r.get("id")]
+                if qdrant_ids:
+                    # 批量查询 MySQL
+                    entries = db.query(KnowledgeEntry).filter(
+                        KnowledgeEntry.qdrant_id.in_(qdrant_ids)
+                    ).all()
+                    # 构建映射
+                    entry_map = {e.qdrant_id: e for e in entries}
+                    # 补充信息
+                    for result in results:
+                        qdrant_id = result.get("id")
+                        if qdrant_id and qdrant_id in entry_map:
+                            entry = entry_map[qdrant_id]
+                            result["title"] = entry.title
+                            result["category"] = entry.category
+                            result["summary"] = entry.summary
+            finally:
+                db.close()
+
         # 记录成功日志
         total_time = time.time() - start_time
         log_llm_usage(
@@ -415,7 +439,7 @@ async def search(request: SearchRequest, http_request: Request, current_user = D
             user_agent=http_request.headers.get("User-Agent")
         )
 
-        return {"results": results, "count": len(results)}
+        return {"results": results, "count": len(results), "search_time": total_time}
     except Exception as e:
         logger.error(f"检索失败: {e}")
         # 记录错误日志
@@ -444,85 +468,27 @@ async def clear_history(current_user = Depends(get_current_user)):
         logger.error(f"清空历史失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Agent 功能已禁用 (2025-12-12)
+# 如需启用，请取消下方注释
 
-class AgentRequest(BaseModel):
-    """Agent 请求"""
-    question: str
-    context: Optional[str] = None
-    max_iterations: int = 5
-
-
-class AgentResponse(BaseModel):
-    """Agent 响应"""
-    success: bool
-    answer: Optional[str] = None
-    thought_process: List[Dict] = []
-    iterations: int = 0
-    error: Optional[str] = None
-
-
-@app.post("/agent", response_model=AgentResponse)
-async def agent_query(request: AgentRequest, current_user = Depends(get_current_user)):
-    """
-    Agent 智能问答接口（需要登录）
-
-    使用 ReAct 模式的 Agent 进行多步推理，可以调用工具完成复杂任务。
-    可用工具：
-    - search: 搜索知识库
-    - calculator: 数学计算
-    - code_executor: 执行 Python 代码
-    - datetime: 获取日期时间
-    - json: JSON 处理
-    """
-    if agent_instance is None:
-        raise HTTPException(status_code=503, detail="Agent 服务未初始化")
-
-    start_time = time.time()
-    try:
-        # 更新 Agent 配置
-        agent_instance.config.max_iterations = request.max_iterations
-
-        # 执行 Agent
-        result = await agent_instance.run(request.question, request.context)
-
-        # 构建思考过程
-        thought_process = []
-        for ta in result.thought_actions:
-            step = {"thought": ta.thought}
-            if ta.action:
-                step["action"] = ta.action
-                step["action_input"] = ta.action_input
-            if ta.observation:
-                step["observation"] = ta.observation[:500] if len(ta.observation) > 500 else ta.observation
-            thought_process.append(step)
-
-        # 记录审计日志
-        total_time = time.time() - start_time
-        log_llm_usage(
-            request_type="agent",
-            question=request.question,
-            answer=result.answer,
-            user_id=current_user.id,
-            username=current_user.username,
-            prompt_tokens=estimate_tokens(request.question),
-            completion_tokens=estimate_tokens(result.answer or ""),
-            total_tokens=estimate_tokens(request.question) + estimate_tokens(result.answer or ""),
-            total_time=total_time,
-            status="success" if result.success else "error",
-            error_message=result.error
-        )
-
-        return AgentResponse(
-            success=result.success,
-            answer=result.answer,
-            thought_process=thought_process,
-            iterations=result.iterations,
-            error=result.error
-        )
-
-    except Exception as e:
-        logger.error(f"Agent 执行失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# class AgentRequest(BaseModel):
+#     """Agent 请求"""
+#     question: str
+#     context: Optional[str] = None
+#     max_iterations: int = 5
+#
+# class AgentResponse(BaseModel):
+#     """Agent 响应"""
+#     success: bool
+#     answer: Optional[str] = None
+#     thought_process: List[Dict] = []
+#     iterations: int = 0
+#     error: Optional[str] = None
+#
+# @app.post("/agent", response_model=AgentResponse)
+# async def agent_query(request: AgentRequest, current_user = Depends(get_current_user)):
+#     """Agent 智能问答接口（需要登录）- 已禁用"""
+#     raise HTTPException(status_code=503, detail="Agent 功能已禁用")
 
 
 @app.post("/add_knowledge", response_model=AddKnowledgeResponse)
@@ -532,6 +498,14 @@ async def add_knowledge(request: AddKnowledgeRequest, http_request: Request, cur
     请求会立即返回 task_id，后台异步处理。
     使用 GET /add_knowledge/status/{task_id} 查询处理状态。
     """
+    # 校验内容不能为空
+    if not request.content or not request.content.strip():
+        raise HTTPException(status_code=400, detail="内容不能为空")
+
+    # 校验内容最小长度
+    if len(request.content.strip()) < 10:
+        raise HTTPException(status_code=400, detail="内容过短，至少需要10个字符")
+
     try:
         # 生成任务 ID
         task_id = hashlib.md5(

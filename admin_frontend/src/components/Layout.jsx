@@ -3,7 +3,7 @@ import { Layout as AntLayout, Menu, Space, Tag, Drawer } from 'antd';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   DashboardOutlined, ApiOutlined, BookOutlined, LogoutOutlined,
-  BarChartOutlined, MessageOutlined, ExperimentOutlined, RobotOutlined,
+  BarChartOutlined, MessageOutlined, ExperimentOutlined,
   FolderOutlined, DatabaseOutlined, KeyOutlined, TeamOutlined, UserOutlined,
   MenuOutlined, CloseOutlined
 } from '@ant-design/icons';
@@ -41,7 +41,6 @@ export default function Layout() {
   const baseMenuItems = [
     { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
     { key: '/chat', icon: <MessageOutlined />, label: '智能问答' },
-    { key: '/agent', icon: <RobotOutlined />, label: '智能Agent' },
     { key: '/knowledge', icon: <BookOutlined />, label: '知识库' },
     { key: '/groups', icon: <FolderOutlined />, label: '知识分组' },
     { key: '/my-api-keys', icon: <KeyOutlined />, label: '我的卡密' },
