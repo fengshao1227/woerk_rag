@@ -20,6 +20,26 @@ function PrivateRoute({ children }) {
   return token ? children : <Navigate to="/login" />;
 }
 
+function AdminRoute({ children }) {
+  const token = localStorage.getItem('token');
+  const userStr = localStorage.getItem('user');
+
+  if (!token) {
+    return <Navigate to="/login" />;
+  }
+
+  try {
+    const user = JSON.parse(userStr);
+    if (user?.role !== 'admin') {
+      return <Navigate to="/" />;
+    }
+  } catch (e) {
+    return <Navigate to="/" />;
+  }
+
+  return children;
+}
+
 export default function App() {
   return (
     <ConfigProvider locale={zhCN}>
@@ -27,17 +47,20 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+            {/* 所有用户可访问 */}
             <Route index element={<Dashboard />} />
-            <Route path="channels" element={<Channels />} />
-            <Route path="embedding-providers" element={<EmbeddingProviders />} />
-            <Route path="knowledge" element={<Knowledge />} />
-            <Route path="groups" element={<Groups />} />
-            <Route path="usage" element={<UsageStats />} />
             <Route path="chat" element={<Chat />} />
             <Route path="agent" element={<Agent />} />
-            <Route path="evaluation" element={<Evaluation />} />
-            <Route path="api-keys" element={<ApiKeys />} />
-            <Route path="users" element={<Users />} />
+            <Route path="knowledge" element={<Knowledge />} />
+            <Route path="groups" element={<Groups />} />
+
+            {/* 仅管理员可访问 */}
+            <Route path="channels" element={<AdminRoute><Channels /></AdminRoute>} />
+            <Route path="embedding-providers" element={<AdminRoute><EmbeddingProviders /></AdminRoute>} />
+            <Route path="api-keys" element={<AdminRoute><ApiKeys /></AdminRoute>} />
+            <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
+            <Route path="usage" element={<AdminRoute><UsageStats /></AdminRoute>} />
+            <Route path="evaluation" element={<AdminRoute><Evaluation /></AdminRoute>} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -682,14 +682,38 @@ async def list_knowledge(
 
     query = db.query(KnowledgeEntry)
 
-    # 用户权限过滤：管理员可看全部，普通用户只看自己的 + 公开的
+    # 用户权限过滤：管理员可看全部，普通用户只看自己的 + 公开的 + 共享分组中的
     if current_user.role != "admin":
-        query = query.filter(
-            or_(
-                KnowledgeEntry.user_id == current_user.id,
-                KnowledgeEntry.is_public == True
+        # 获取共享给当前用户的分组ID
+        shared_group_ids = db.query(GroupShare.group_id).filter(
+            GroupShare.shared_with_user_id == current_user.id
+        ).all()
+        shared_group_ids = [g[0] for g in shared_group_ids]
+
+        # 获取共享分组中的 qdrant_id
+        shared_qdrant_ids = []
+        if shared_group_ids:
+            shared_items = db.query(KnowledgeGroupItem.qdrant_id).filter(
+                KnowledgeGroupItem.group_id.in_(shared_group_ids)
+            ).all()
+            shared_qdrant_ids = [item[0] for item in shared_items]
+
+        # 过滤条件：自己的 OR 公开的 OR 在共享分组中的
+        if shared_qdrant_ids:
+            query = query.filter(
+                or_(
+                    KnowledgeEntry.user_id == current_user.id,
+                    KnowledgeEntry.is_public == True,
+                    KnowledgeEntry.qdrant_id.in_(shared_qdrant_ids)
+                )
             )
-        )
+        else:
+            query = query.filter(
+                or_(
+                    KnowledgeEntry.user_id == current_user.id,
+                    KnowledgeEntry.is_public == True
+                )
+            )
 
     # 分组筛选
     if group_id is not None:
