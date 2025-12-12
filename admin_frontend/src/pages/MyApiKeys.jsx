@@ -143,7 +143,7 @@ export default function MyApiKeys() {
 
   // 生成远程安装命令（推荐，支持多窗口）
   const getRemoteInstallCommand = (apiKey) => {
-    return `claude mcp add rag-knowledge -s user -- echo '{"url":"https://rag.litxczv.shop/mcp","headers":{"X-API-Key":"${apiKey}"}}'`;
+    return `claude mcp add --transport http -s user rag-knowledge https://rag.litxczv.shop/mcp --header "X-API-Key: ${apiKey}"`;
   };
 
   // 生成本地安装命令（需要 Python 环境）
