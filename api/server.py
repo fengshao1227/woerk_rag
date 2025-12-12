@@ -683,53 +683,6 @@ async def health():
     return {"status": "ok", "service": "RAG API"}
 
 
-# ===================== MCP 卡密验证 =====================
-
-from admin.models import MCPApiKey
-
-@app.post("/mcp/verify")
-async def verify_mcp_api_key(request: Request):
-    """
-    验证 MCP API 卡密（公开端点，无需登录）
-
-    请求体: {"api_key": "rag_sk_xxx"}
-    返回: {"valid": true/false, "message": "...", "name": "卡密名称"}
-    """
-    try:
-        body = await request.json()
-        api_key = body.get("api_key", "")
-
-        if not api_key:
-            return {"valid": False, "message": "缺少 api_key 参数", "name": None}
-
-        db = SessionLocal()
-        try:
-            key_record = db.query(MCPApiKey).filter(
-                MCPApiKey.key == api_key,
-                MCPApiKey.is_active == True
-            ).first()
-
-            if not key_record:
-                return {"valid": False, "message": "无效的卡密", "name": None}
-
-            # 检查过期时间
-            if key_record.expires_at and key_record.expires_at < datetime.now():
-                return {"valid": False, "message": "卡密已过期", "name": key_record.name}
-
-            # 更新使用统计
-            key_record.last_used_at = datetime.now()
-            key_record.usage_count += 1
-            db.commit()
-
-            return {"valid": True, "message": "验证成功", "name": key_record.name}
-        finally:
-            db.close()
-
-    except Exception as e:
-        logger.error(f"验证卡密失败: {e}")
-        return {"valid": False, "message": f"验证失败: {str(e)}", "name": None}
-
-
 # ===================== 调度器管理 API =====================
 
 @app.get("/admin/api/scheduler/status")
