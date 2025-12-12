@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Layout as AntLayout, Menu, Space, Tag, Drawer, Grid } from 'antd';
+import { Layout as AntLayout, Menu, Space, Tag, Drawer } from 'antd';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   DashboardOutlined, ApiOutlined, BookOutlined, LogoutOutlined,
@@ -9,18 +9,22 @@ import {
 } from '@ant-design/icons';
 
 const { Header, Sider, Content } = AntLayout;
-const { useBreakpoint } = Grid;
 
 export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [user, setUser] = useState(null);
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const screens = useBreakpoint();
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
 
-  // 判断是否为移动端 (< 768px)
-  // 注意: useBreakpoint 初始值是空对象，需要判断是否已加载
-  const isMobile = Object.keys(screens).length > 0 ? !screens.md : false;
+  // 使用 window.innerWidth 判断移动端 (< 768px)
+  const isMobile = windowWidth < 768;
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     // 从 localStorage 获取用户信息

@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Input, Button, Card, Spin, Empty, Tag, Collapse, Switch, Tooltip, Popover, Select, Grid } from 'antd';
+import { Input, Button, Card, Spin, Empty, Tag, Collapse, Switch, Tooltip, Popover, Select } from 'antd';
 import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, ThunderboltOutlined, LinkOutlined, FolderOutlined } from '@ant-design/icons';
 import { chatAPI, groupAPI } from '../services/api';
 
 const { TextArea } = Input;
-const { useBreakpoint } = Grid;
 
 /**
  * 渲染带引用高亮的回答内容
@@ -113,9 +112,15 @@ export default function Chat() {
   const messagesEndRef = useRef(null);
   const abortControllerRef = useRef(null);
   const sourceRefs = useRef({});  // 来源元素的引用
-  const screens = useBreakpoint();
-  // 判断是否为移动端 (< 768px)，screens 初始为空对象时默认桌面端
-  const isMobile = Object.keys(screens).length > 0 ? !screens.md : false;
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+  // 使用 window.innerWidth 判断移动端 (< 768px)
+  const isMobile = windowWidth < 768;
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // 加载分组列表
   useEffect(() => {
