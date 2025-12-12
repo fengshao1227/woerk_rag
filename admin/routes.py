@@ -1141,11 +1141,6 @@ async def delete_knowledge_by_qdrant_id(
     if current_user.role != "admin" and entry.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权删除他人的知识条目")
 
-    # 复用现有删除逻辑 - 调用原删除函数
-    from fastapi import Request
-    # 直接执行删除逻辑
-    knowledge_id = entry.id
-
     # 0. 创建删除版本记录
     try:
         from utils.version_tracker import track_knowledge_change
@@ -1187,7 +1182,7 @@ async def delete_knowledge_by_qdrant_id(
         qdrant_delete_failed = True
 
     # 2. 删除分组关联
-    db.query(KnowledgeGroupItem).filter(KnowledgeGroupItem.knowledge_id == knowledge_id).delete()
+    db.query(KnowledgeGroupItem).filter(KnowledgeGroupItem.qdrant_id == qdrant_id).delete()
 
     # 3. 从 MySQL 删除
     db.delete(entry)
