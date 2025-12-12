@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Space, Tag, Card, Switch } from 'antd';
 import { EditOutlined, DeleteOutlined, PlusOutlined, UserOutlined, KeyOutlined, CrownOutlined } from '@ant-design/icons';
 import { userAPI } from '../services/api';
+import useResponsive from '../hooks/useResponsive';
 
 export default function Users() {
   const [users, setUsers] = useState([]);
@@ -9,6 +10,7 @@ export default function Users() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [form] = Form.useForm();
+  const { isMobile } = useResponsive();
 
   const loadUsers = async () => {
     setLoading(true);
@@ -44,7 +46,6 @@ export default function Users() {
   const handleSubmit = async (values) => {
     try {
       if (editingUser) {
-        // 更新时，如果密码为空则不传
         const updateData = {
           role: values.role,
           is_active: values.is_active
@@ -87,6 +88,48 @@ export default function Users() {
     }
   };
 
+  // 移动端卡片渲染
+  const renderMobileCard = (user) => (
+    <Card
+      key={user.id}
+      size="small"
+      style={{ marginBottom: 8 }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <UserOutlined style={{ color: user.role === 'admin' ? '#faad14' : '#1890ff' }} />
+            <span style={{ fontWeight: 500, fontSize: 15 }}>{user.username}</span>
+            {user.role === 'admin' && <CrownOutlined style={{ color: '#faad14' }} />}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            {user.role === 'admin'
+              ? <Tag color="gold">管理员</Tag>
+              : <Tag color="blue">普通用户</Tag>
+            }
+            <Tag color={user.is_active ? 'green' : 'red'}>
+              {user.is_active ? '已启用' : '已禁用'}
+            </Tag>
+          </div>
+          <div style={{ fontSize: 12, color: '#999' }}>
+            创建于: {new Date(user.created_at).toLocaleDateString()}
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(user)}>
+            编辑
+          </Button>
+          <Switch
+            size="small"
+            checked={user.is_active}
+            onChange={() => handleToggleActive(user)}
+          />
+        </div>
+      </div>
+    </Card>
+  );
+
+  // 桌面端表格列
   const columns = [
     {
       title: '用户名',
@@ -160,22 +203,38 @@ export default function Users() {
         title={
           <Space>
             <UserOutlined />
-            <span>用户管理</span>
+            <span style={{ fontSize: isMobile ? 14 : 16 }}>用户管理</span>
           </Space>
         }
         extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-            新建用户
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={handleCreate}
+            size={isMobile ? 'small' : 'middle'}
+          >
+            {isMobile ? '新建' : '新建用户'}
           </Button>
         }
+        bodyStyle={{ padding: isMobile ? 12 : 24 }}
       >
-        <Table
-          columns={columns}
-          dataSource={users}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 10 }}
-        />
+        {isMobile ? (
+          <div>
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 40 }}>加载中...</div>
+            ) : (
+              users.map(renderMobileCard)
+            )}
+          </div>
+        ) : (
+          <Table
+            columns={columns}
+            dataSource={users}
+            rowKey="id"
+            loading={loading}
+            pagination={{ pageSize: 10 }}
+          />
+        )}
       </Card>
 
       <Modal
@@ -188,7 +247,7 @@ export default function Users() {
         open={modalOpen}
         onCancel={() => { setModalOpen(false); setEditingUser(null); }}
         footer={null}
-        width={450}
+        width={isMobile ? '95vw' : 450}
       >
         <Form form={form} onFinish={handleSubmit} layout="vertical" style={{ marginTop: 20 }}>
           <Form.Item

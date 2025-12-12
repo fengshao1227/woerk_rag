@@ -175,13 +175,9 @@ body {
   }
 }
 
-/* 大屏优化 */
+/* 大屏优化 - 移除宽度限制，让内容占满 */
 @media screen and (min-width: 1600px) {
-  .ant-layout-content {
-    max-width: 1400px;
-    margin-left: auto !important;
-    margin-right: auto !important;
-  }
+  /* 不再限制最大宽度 */
 }
 
 /* ============================================================

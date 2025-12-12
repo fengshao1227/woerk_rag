@@ -11,6 +11,7 @@ import {
 import { providerAPI, modelAPI } from '../services/api';
 import ModelTestModal from '../components/ModelTestModal';
 import FetchModelsModal from '../components/FetchModelsModal';
+import useResponsive from '../hooks/useResponsive';
 
 const { Text } = Typography;
 
@@ -20,6 +21,7 @@ export default function Channels() {
   const [balanceMap, setBalanceMap] = useState({}); // providerId -> balance info
   const [loading, setLoading] = useState(false);
   const [loadingBalance, setLoadingBalance] = useState({}); // providerId -> loading state
+  const { isMobile } = useResponsive();
 
   // Provider modal
   const [providerModalOpen, setProviderModalOpen] = useState(false);
@@ -250,8 +252,8 @@ export default function Channels() {
     const isOpenAI = provider.api_format === 'openai';
 
     const cardTitle = (
-      <Space>
-        <span>{provider.name}</span>
+      <Space wrap size={isMobile ? 4 : 8}>
+        <span style={{ fontSize: isMobile ? 14 : 16 }}>{provider.name}</span>
         <Tag color={isOpenAI ? 'blue' : 'purple'}>{provider.api_format.toUpperCase()}</Tag>
         {provider.is_default && <Tag color="gold">默认</Tag>}
         {!provider.is_active && <Tag color="red">禁用</Tag>}
@@ -259,18 +261,20 @@ export default function Channels() {
     );
 
     const cardExtra = (
-      <Space>
+      <Space wrap size={isMobile ? 4 : 8}>
         {isOpenAI && (
           <>
-            <Tooltip title="获取远程模型">
-              <Button
-                size="small"
-                icon={<CloudDownloadOutlined />}
-                onClick={() => handleFetchModels(provider)}
-              >
-                获取模型
-              </Button>
-            </Tooltip>
+            {!isMobile && (
+              <Tooltip title="获取远程模型">
+                <Button
+                  size="small"
+                  icon={<CloudDownloadOutlined />}
+                  onClick={() => handleFetchModels(provider)}
+                >
+                  获取模型
+                </Button>
+              </Tooltip>
+            )}
             <Tooltip title="获取余额">
               <Button
                 size="small"
@@ -278,7 +282,7 @@ export default function Channels() {
                 loading={loadingBalance[provider.id]}
                 onClick={() => handleGetBalance(provider)}
               >
-                余额
+                {isMobile ? '' : '余额'}
               </Button>
             </Tooltip>
           </>
@@ -294,6 +298,27 @@ export default function Channels() {
       </Space>
     );
 
+    // 移动端模型卡片渲染
+    const renderMobileModelCard = (model) => (
+      <Card key={model.id} size="small" style={{ marginBottom: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 500, marginBottom: 4 }}>{model.display_name}</div>
+            <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>{model.model_id}</div>
+            <Space size={4} wrap>
+              <Tag color={model.is_active ? 'green' : 'default'}>{model.is_active ? '激活' : '禁用'}</Tag>
+              {model.is_default && <Tag color="blue">默认</Tag>}
+              <span style={{ fontSize: 11, color: '#999' }}>T:{model.temperature} | Max:{model.max_tokens}</span>
+            </Space>
+          </div>
+          <Space direction="vertical" size={4}>
+            <Button size="small" type="primary" icon={<PlayCircleOutlined />} onClick={() => handleTestModel(model)}>测试</Button>
+            <Button size="small" icon={<EditOutlined />} onClick={() => handleEditModel(model)}>编辑</Button>
+          </Space>
+        </div>
+      </Card>
+    );
+
     return (
       <Card
         key={provider.id}
@@ -301,6 +326,7 @@ export default function Channels() {
         extra={cardExtra}
         style={{ marginBottom: 16 }}
         size="small"
+        bodyStyle={{ padding: isMobile ? 12 : 24 }}
       >
         {/* Balance display */}
         {balanceMap[provider.id] && (
@@ -311,7 +337,7 @@ export default function Channels() {
 
         {/* Provider info */}
         <div style={{ marginBottom: 12, color: '#666', fontSize: 12 }}>
-          <Space split="|">
+          <Space split="|" wrap>
             <span>API Key: {provider.api_key_masked}</span>
             {provider.base_url && <span>Base URL: {provider.base_url}</span>}
             <span>超时: {provider.request_timeout}s</span>
@@ -319,7 +345,19 @@ export default function Channels() {
           </Space>
         </div>
 
-        {/* Models table */}
+        {/* Mobile: fetch models button */}
+        {isMobile && isOpenAI && (
+          <Button
+            size="small"
+            icon={<CloudDownloadOutlined />}
+            onClick={() => handleFetchModels(provider)}
+            style={{ marginBottom: 8 }}
+          >
+            获取远程模型
+          </Button>
+        )}
+
+        {/* Models table/cards */}
         <div style={{ marginBottom: 8 }}>
           <Button
             type="dashed"
@@ -335,35 +373,45 @@ export default function Channels() {
             添加模型
           </Button>
         </div>
-        <Table
-          columns={modelColumns}
-          dataSource={models}
-          rowKey="id"
-          size="small"
-          pagination={false}
-          scroll={{ x: 700 }}
-          locale={{ emptyText: '暂无模型' }}
-        />
+
+        {isMobile ? (
+          models.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>暂无模型</div>
+          ) : (
+            models.map(renderMobileModelCard)
+          )
+        ) : (
+          <Table
+            columns={modelColumns}
+            dataSource={models}
+            rowKey="id"
+            size="small"
+            pagination={false}
+            scroll={{ x: 700 }}
+            locale={{ emptyText: '暂无模型' }}
+          />
+        )}
       </Card>
     );
   };
 
   return (
     <div>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <Button
           type="primary"
           icon={<PlusOutlined />}
+          size={isMobile ? 'small' : 'middle'}
           onClick={() => {
             setEditingProvider(null);
             providerForm.resetFields();
             setProviderModalOpen(true);
           }}
         >
-          添加供应商
+          {isMobile ? '添加' : '添加供应商'}
         </Button>
-        <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading}>
-          刷新
+        <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading} size={isMobile ? 'small' : 'middle'}>
+          {isMobile ? '' : '刷新'}
         </Button>
       </div>
 

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, message, Popconfirm, Space, Tag, Tooltip, Switch, DatePicker, Typography } from 'antd';
+import { Table, Button, Modal, Form, Input, message, Popconfirm, Space, Tag, Tooltip, Switch, DatePicker, Typography, Card, Spin } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { apiKeysAPI } from '../services/api';
+import useResponsive from '../hooks/useResponsive';
 import dayjs from 'dayjs';
 
 const { Paragraph } = Typography;
@@ -12,6 +13,7 @@ export default function ApiKeys() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form] = Form.useForm();
+  const { isMobile } = useResponsive();
 
   const loadData = async () => {
     setLoading(true);
@@ -169,40 +171,104 @@ export default function ApiKeys() {
     }
   ];
 
+  // 移动端卡片渲染
+  const renderMobileCard = (record) => {
+    const exp = record.expires_at ? dayjs(record.expires_at) : null;
+    const isExpired = exp && exp.isBefore(dayjs());
+
+    return (
+      <Card key={record.id} size="small" style={{ marginBottom: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <KeyOutlined style={{ color: '#1890ff' }} />
+              <span style={{ fontWeight: 500 }}>{record.name}</span>
+            </div>
+            <div style={{ fontSize: 12, color: '#666', marginBottom: 8, fontFamily: 'monospace' }}>
+              {record.key.slice(0, 8)}...{record.key.slice(-6)}
+              <Button
+                type="link"
+                size="small"
+                icon={<CopyOutlined />}
+                onClick={() => handleCopy(record.key)}
+                style={{ padding: '0 4px' }}
+              />
+            </div>
+            <Space size={4} wrap>
+              {record.is_active
+                ? <Tag icon={<CheckCircleOutlined />} color="success">启用</Tag>
+                : <Tag icon={<CloseCircleOutlined />} color="default">禁用</Tag>
+              }
+              {!exp ? (
+                <Tag color="blue">永不过期</Tag>
+              ) : (
+                <Tag color={isExpired ? 'red' : 'green'}>
+                  {isExpired ? '已过期' : exp.format('MM-DD')}
+                </Tag>
+              )}
+              <Tag color="purple">{record.usage_count} 次</Tag>
+            </Space>
+          </div>
+          <Space direction="vertical" size={4}>
+            <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
+            <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
+              <Button size="small" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          </Space>
+        </div>
+      </Card>
+    );
+  };
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold flex items-center gap-2">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+        <h2 style={{ margin: 0, fontSize: isMobile ? 16 : 20, display: 'flex', alignItems: 'center', gap: 8 }}>
           <KeyOutlined /> MCP 卡密管理
         </h2>
         <Button
           type="primary"
           icon={<PlusOutlined />}
+          size={isMobile ? 'small' : 'middle'}
           onClick={() => {
             setEditingId(null);
             form.resetFields();
             setModalOpen(true);
           }}
         >
-          创建卡密
+          {isMobile ? '创建' : '创建卡密'}
         </Button>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-        <h4 className="font-medium text-blue-700 mb-2">使用说明</h4>
-        <p className="text-sm text-blue-600">
-          MCP 卡密用于 Claude Desktop 连接本知识库。将卡密配置到 MCP Server 环境变量 <code className="bg-blue-100 px-1 rounded">RAG_API_KEY</code> 即可使用。
+      <div style={{
+        background: '#e6f7ff',
+        border: '1px solid #91d5ff',
+        borderRadius: 8,
+        padding: isMobile ? 12 : 16,
+        marginBottom: 16
+      }}>
+        <h4 style={{ fontWeight: 500, color: '#1890ff', marginBottom: 8, fontSize: isMobile ? 13 : 14 }}>使用说明</h4>
+        <p style={{ fontSize: isMobile ? 12 : 14, color: '#096dd9', margin: 0 }}>
+          MCP 卡密用于 Claude Desktop 连接本知识库。将卡密配置到 MCP Server 环境变量 <code style={{ background: '#bae7ff', padding: '0 4px', borderRadius: 2 }}>RAG_API_KEY</code> 即可使用。
         </p>
       </div>
 
-      <Table
-        columns={columns}
-        dataSource={data}
-        rowKey="id"
-        loading={loading}
-        pagination={{ pageSize: 10 }}
-        scroll={{ x: 1200 }}
-      />
+      {isMobile ? (
+        loading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+        ) : (
+          data.map(renderMobileCard)
+        )
+      ) : (
+        <Table
+          columns={columns}
+          dataSource={data}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 10 }}
+          scroll={{ x: 1200 }}
+        />
+      )}
 
       <Modal
         title={editingId ? '编辑卡密' : '创建卡密'}
@@ -213,7 +279,7 @@ export default function ApiKeys() {
           form.resetFields();
         }}
         footer={null}
-        width={500}
+        width={isMobile ? '95vw' : 500}
       >
         <Form
           form={form}

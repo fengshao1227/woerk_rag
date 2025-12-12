@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Space, Tag, Card, Row, Col, Badge, Tooltip, Transfer, List, Switch } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Space, Tag, Card, Row, Col, Badge, Tooltip, Transfer, List, Switch, Spin } from 'antd';
 import { EditOutlined, DeleteOutlined, PlusOutlined, FolderOutlined, AppstoreOutlined, SettingOutlined, InboxOutlined, ShareAltOutlined, UserOutlined, LockOutlined, GlobalOutlined } from '@ant-design/icons';
 import { groupAPI, knowledgeAPI, userAPI } from '../services/api';
+import useResponsive from '../hooks/useResponsive';
 
 // 预定义颜色
 const COLORS = [
@@ -33,6 +34,7 @@ export default function Groups() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
   const [form] = Form.useForm();
+  const { isMobile } = useResponsive();
 
   // 分组条目管理
   const [itemsModalOpen, setItemsModalOpen] = useState(false);
@@ -374,28 +376,98 @@ export default function Groups() {
   // 获取非默认分组列表（用于分配目标选择）
   const targetGroups = groups.filter(g => !g.is_default);
 
+  // 移动端卡片渲染
+  const renderMobileCard = (record) => (
+    <Card key={record.id} size="small" style={{ marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 28,
+              height: 28,
+              borderRadius: 4,
+              backgroundColor: record.color + '20',
+              color: record.color
+            }}>
+              {record.is_default ? <InboxOutlined /> : <FolderOutlined />}
+            </span>
+            <span style={{ fontWeight: 500 }}>{record.name}</span>
+            {record.is_default && <Tag color="default">默认</Tag>}
+          </div>
+          <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+            {record.description || '暂无描述'}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Badge count={record.items_count} showZero color="#1890ff" />
+            {record.is_public
+              ? <Tag icon={<GlobalOutlined />} color="green">公开</Tag>
+              : <Tag icon={<LockOutlined />} color="blue">私有</Tag>
+            }
+            {record.is_active
+              ? <Tag color="green">启用</Tag>
+              : <Tag color="red">禁用</Tag>
+            }
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {record.can_edit && (
+            <Button size="small" icon={<AppstoreOutlined />} onClick={() => handleManageItems(record)}>
+              {record.is_default ? '分配' : '条目'}
+            </Button>
+          )}
+          {!record.is_default && record.can_edit && (
+            <>
+              <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
+              <Popconfirm title="确认删除?" onConfirm={() => handleDelete(record.id)}>
+                <Button size="small" danger icon={<DeleteOutlined />} />
+              </Popconfirm>
+            </>
+          )}
+          {!record.can_edit && <Tag color="default">只读</Tag>}
+        </div>
+      </div>
+    </Card>
+  );
+
   return (
     <div>
       <Card
         title={
           <Space>
             <FolderOutlined />
-            <span>知识分组管理</span>
+            <span style={{ fontSize: isMobile ? 14 : 16 }}>知识分组管理</span>
           </Space>
         }
         extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-            新建分组
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={handleCreate}
+            size={isMobile ? 'small' : 'middle'}
+          >
+            {isMobile ? '新建' : '新建分组'}
           </Button>
         }
+        bodyStyle={{ padding: isMobile ? 12 : 24 }}
       >
-        <Table
-          columns={columns}
-          dataSource={groups}
-          rowKey="id"
-          loading={loading}
-          pagination={false}
-        />
+        {isMobile ? (
+          loading ? (
+            <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+          ) : (
+            groups.map(renderMobileCard)
+          )
+        ) : (
+          <Table
+            columns={columns}
+            dataSource={groups}
+            rowKey="id"
+            loading={loading}
+            pagination={false}
+          />
+        )}
       </Card>
 
       {/* 创建/编辑分组弹窗 */}
@@ -404,7 +476,7 @@ export default function Groups() {
         open={modalOpen}
         onCancel={() => { setModalOpen(false); setEditingGroup(null); }}
         footer={null}
-        width={500}
+        width={isMobile ? '95vw' : 500}
       >
         <Form form={form} onFinish={handleSubmit} layout="vertical">
           <Form.Item
@@ -483,7 +555,7 @@ export default function Groups() {
         open={itemsModalOpen}
         onCancel={() => { setItemsModalOpen(false); setSelectedGroup(null); }}
         footer={null}
-        width={900}
+        width={isMobile ? '95vw' : 900}
       >
         <Transfer
           dataSource={allKnowledge.map(item => ({
@@ -501,7 +573,7 @@ export default function Groups() {
               {item.title}
             </span>
           )}
-          listStyle={{ width: 380, height: 400 }}
+          listStyle={{ width: isMobile ? '100%' : 380, height: isMobile ? 300 : 400 }}
           showSearch
           filterOption={(inputValue, option) =>
             option.title.toLowerCase().includes(inputValue.toLowerCase())
@@ -524,7 +596,7 @@ export default function Groups() {
         onOk={handleAssignToGroup}
         okText="分配"
         okButtonProps={{ disabled: !assignTargetGroup || selectedUngroupedKeys.length === 0 }}
-        width={700}
+        width={isMobile ? '95vw' : 700}
       >
         <div style={{ marginBottom: 16 }}>
           <span style={{ marginRight: 8 }}>目标分组：</span>
@@ -581,7 +653,7 @@ export default function Groups() {
         open={shareModalOpen}
         onCancel={() => { setShareModalOpen(false); setShareGroup(null); }}
         footer={null}
-        width={600}
+        width={isMobile ? '95vw' : 600}
       >
         {/* 添加共享表单 */}
         <Card size="small" title="添加共享" style={{ marginBottom: 16 }}>

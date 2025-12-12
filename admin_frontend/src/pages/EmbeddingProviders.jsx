@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, InputNumber, message, Popconfirm, Space, Tag, Tooltip } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, CheckCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, InputNumber, message, Popconfirm, Space, Tag, Tooltip, Card, Spin } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CheckCircleOutlined, ThunderboltOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { embeddingProviderAPI } from '../services/api';
+import useResponsive from '../hooks/useResponsive';
 
 export default function EmbeddingProviders() {
   const [data, setData] = useState([]);
@@ -14,6 +15,7 @@ export default function EmbeddingProviders() {
   const [testResult, setTestResult] = useState(null);
   const [form] = Form.useForm();
   const [testForm] = Form.useForm();
+  const { isMobile } = useResponsive();
 
   const loadData = async () => {
     setLoading(true);
@@ -169,25 +171,66 @@ export default function EmbeddingProviders() {
     }
   ];
 
+  // 移动端卡片渲染
+  const renderMobileCard = (record) => (
+    <Card key={record.id} size="small" style={{ marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <DatabaseOutlined style={{ color: '#1890ff' }} />
+            <span style={{ fontWeight: 500 }}>{record.name}</span>
+            {record.is_default && <Tag color="blue">默认</Tag>}
+          </div>
+          <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>{record.model_name}</div>
+          <div style={{ fontSize: 11, color: '#999', marginBottom: 8 }}>{record.api_base_url}</div>
+          <Space size={4} wrap>
+            <Tag>{record.embedding_dim}维</Tag>
+            <Tag>批{record.max_batch_size}</Tag>
+            {record.is_active ? <Tag color="green">激活</Tag> : <Tag>禁用</Tag>}
+          </Space>
+        </div>
+        <Space direction="vertical" size={4}>
+          <Button size="small" icon={<ThunderboltOutlined />} onClick={() => openTestModal(record)}>测试</Button>
+          <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
+          {!record.is_default && (
+            <Button size="small" icon={<CheckCircleOutlined />} onClick={() => handleSetDefault(record.id)}>默认</Button>
+          )}
+        </Space>
+      </div>
+    </Card>
+  );
+
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <h2 style={{ margin: 0, fontSize: isMobile ? 16 : 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <DatabaseOutlined /> 嵌入模型管理
+        </h2>
         <Button
           type="primary"
           icon={<PlusOutlined />}
+          size={isMobile ? 'small' : 'middle'}
           onClick={() => { setEditingId(null); form.resetFields(); setModalOpen(true); }}
         >
-          添加嵌入供应商
+          {isMobile ? '添加' : '添加嵌入供应商'}
         </Button>
       </div>
 
-      <Table
-        columns={columns}
-        dataSource={data}
-        rowKey="id"
-        loading={loading}
-        scroll={{ x: 1200 }}
-      />
+      {isMobile ? (
+        loading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+        ) : (
+          data.map(renderMobileCard)
+        )
+      ) : (
+        <Table
+          columns={columns}
+          dataSource={data}
+          rowKey="id"
+          loading={loading}
+          scroll={{ x: 1200 }}
+        />
+      )}
 
       {/* 创建/编辑模态框 */}
       <Modal
@@ -195,7 +238,7 @@ export default function EmbeddingProviders() {
         open={modalOpen}
         onCancel={() => { setModalOpen(false); setEditingId(null); }}
         footer={null}
-        width="min(600px, 95vw)"
+        width={isMobile ? '95vw' : 600}
       >
         <Form form={form} onFinish={handleSubmit} layout="vertical">
           <Form.Item name="name" label="供应商名称" rules={[{ required: true, message: '请输入名称' }]}>
@@ -254,7 +297,7 @@ export default function EmbeddingProviders() {
         open={testModalOpen}
         onCancel={() => { setTestModalOpen(false); setTestingId(null); setTestResult(null); }}
         footer={null}
-        width="min(600px, 95vw)"
+        width={isMobile ? '95vw' : 600}
       >
         <Form form={testForm} onFinish={handleTest} layout="vertical">
           <Form.Item name="text" label="测试文本" rules={[{ required: true }]}>

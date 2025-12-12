@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Card, Input, Button, List, Typography, Tag, Collapse, Spin, message, Space, Tooltip } from 'antd';
 import { SendOutlined, RobotOutlined, UserOutlined, ClearOutlined, ThunderboltOutlined, ToolOutlined } from '@ant-design/icons';
 import { agentAPI } from '../services/api';
+import useResponsive from '../hooks/useResponsive';
 
 const { TextArea } = Input;
 const { Text, Paragraph } = Typography;
@@ -12,6 +13,7 @@ export default function Agent() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const { isMobile } = useResponsive();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -137,22 +139,22 @@ export default function Agent() {
         style={{
           display: 'flex',
           justifyContent: isUser ? 'flex-end' : 'flex-start',
-          marginBottom: 16
+          marginBottom: isMobile ? 12 : 16
         }}
       >
         <div
           style={{
-            maxWidth: '80%',
+            maxWidth: isMobile ? '90%' : '80%',
             display: 'flex',
             flexDirection: isUser ? 'row-reverse' : 'row',
             alignItems: 'flex-start',
-            gap: 8
+            gap: isMobile ? 6 : 8
           }}
         >
           <div
             style={{
-              width: 36,
-              height: 36,
+              width: isMobile ? 28 : 36,
+              height: isMobile ? 28 : 36,
               borderRadius: '50%',
               background: isUser ? '#1890ff' : '#52c41a',
               display: 'flex',
@@ -162,18 +164,19 @@ export default function Agent() {
             }}
           >
             {isUser ? (
-              <UserOutlined style={{ color: '#fff', fontSize: 18 }} />
+              <UserOutlined style={{ color: '#fff', fontSize: isMobile ? 14 : 18 }} />
             ) : (
-              <RobotOutlined style={{ color: '#fff', fontSize: 18 }} />
+              <RobotOutlined style={{ color: '#fff', fontSize: isMobile ? 14 : 18 }} />
             )}
           </div>
           <div
             style={{
               background: isUser ? '#1890ff' : '#f5f5f5',
               color: isUser ? '#fff' : '#000',
-              padding: '12px 16px',
+              padding: isMobile ? '8px 12px' : '12px 16px',
               borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-              minWidth: 60
+              minWidth: 60,
+              fontSize: isMobile ? 13 : 14
             }}
           >
             <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
@@ -195,7 +198,7 @@ export default function Agent() {
               </>
             )}
             <div style={{
-              fontSize: 11,
+              fontSize: isMobile ? 10 : 11,
               marginTop: 6,
               opacity: 0.7,
               textAlign: isUser ? 'left' : 'right'
@@ -209,12 +212,12 @@ export default function Agent() {
   };
 
   return (
-    <div style={{ height: 'calc(100vh - 180px)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: isMobile ? 'calc(100vh - 140px)' : 'calc(100vh - 180px)', display: 'flex', flexDirection: 'column' }}>
       <Card
         title={
-          <Space>
+          <Space size={isMobile ? 4 : 8}>
             <RobotOutlined />
-            <span>智能 Agent</span>
+            <span style={{ fontSize: isMobile ? 14 : 16 }}>智能 Agent</span>
             <Tag color="green">在线</Tag>
           </Space>
         }
@@ -224,8 +227,9 @@ export default function Agent() {
               icon={<ClearOutlined />}
               onClick={handleClear}
               disabled={messages.length === 0}
+              size={isMobile ? 'small' : 'middle'}
             >
-              清空
+              {isMobile ? '' : '清空'}
             </Button>
           </Tooltip>
         }
@@ -233,17 +237,21 @@ export default function Agent() {
         bodyStyle={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 0 }}
       >
         {/* 功能说明 */}
-        <div style={{ padding: '12px 16px', background: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
-          <Text type="secondary" style={{ fontSize: 13 }}>
+        <div style={{ padding: isMobile ? '8px 12px' : '12px 16px', background: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+          <Text type="secondary" style={{ fontSize: isMobile ? 11 : 13 }}>
             Agent 可以使用以下工具为你服务：
           </Text>
-          <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Tag icon={<ToolOutlined />} color="blue">calculator 计算器</Tag>
-            <Tag icon={<ToolOutlined />} color="green">search 知识搜索</Tag>
-            <Tag icon={<ToolOutlined />} color="orange">web_search 网页搜索</Tag>
-            <Tag icon={<ToolOutlined />} color="purple">datetime 日期时间</Tag>
-            <Tag icon={<ToolOutlined />} color="cyan">code_executor 代码执行</Tag>
-            <Tag icon={<ToolOutlined />} color="magenta">json JSON处理</Tag>
+          <div style={{ marginTop: 8, display: 'flex', gap: isMobile ? 4 : 8, flexWrap: 'wrap' }}>
+            <Tag icon={<ToolOutlined />} color="blue" style={{ fontSize: isMobile ? 10 : 12 }}>计算器</Tag>
+            <Tag icon={<ToolOutlined />} color="green" style={{ fontSize: isMobile ? 10 : 12 }}>知识搜索</Tag>
+            <Tag icon={<ToolOutlined />} color="orange" style={{ fontSize: isMobile ? 10 : 12 }}>网页搜索</Tag>
+            {!isMobile && (
+              <>
+                <Tag icon={<ToolOutlined />} color="purple">日期时间</Tag>
+                <Tag icon={<ToolOutlined />} color="cyan">代码执行</Tag>
+                <Tag icon={<ToolOutlined />} color="magenta">JSON处理</Tag>
+              </>
+            )}
           </div>
         </div>
 
@@ -252,7 +260,7 @@ export default function Agent() {
           style={{
             flex: 1,
             overflow: 'auto',
-            padding: 16,
+            padding: isMobile ? 12 : 16,
             background: '#fff'
           }}
         >
@@ -265,22 +273,22 @@ export default function Agent() {
               flexDirection: 'column',
               color: '#999'
             }}>
-              <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
-              <Text type="secondary">开始与 Agent 对话吧！</Text>
-              <Text type="secondary" style={{ fontSize: 12, marginTop: 8 }}>
-                试试问："计算 1234 * 5678" 或 "搜索项目的配置方法"
+              <RobotOutlined style={{ fontSize: isMobile ? 36 : 48, marginBottom: 16 }} />
+              <Text type="secondary" style={{ fontSize: isMobile ? 13 : 14 }}>开始与 Agent 对话吧！</Text>
+              <Text type="secondary" style={{ fontSize: isMobile ? 11 : 12, marginTop: 8 }}>
+                试试问："{isMobile ? '计算 123 * 456' : '计算 1234 * 5678'}"
               </Text>
             </div>
           ) : (
             <>
               {messages.map(renderMessage)}
               {loading && (
-                <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: isMobile ? 12 : 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: isMobile ? 6 : 8 }}>
                     <div
                       style={{
-                        width: 36,
-                        height: 36,
+                        width: isMobile ? 28 : 36,
+                        height: isMobile ? 28 : 36,
                         borderRadius: '50%',
                         background: '#52c41a',
                         display: 'flex',
@@ -288,9 +296,9 @@ export default function Agent() {
                         justifyContent: 'center'
                       }}
                     >
-                      <RobotOutlined style={{ color: '#fff', fontSize: 18 }} />
+                      <RobotOutlined style={{ color: '#fff', fontSize: isMobile ? 14 : 18 }} />
                     </div>
-                    <div style={{ background: '#f5f5f5', padding: '12px 16px', borderRadius: '16px 16px 16px 4px' }}>
+                    <div style={{ background: '#f5f5f5', padding: isMobile ? '8px 12px' : '12px 16px', borderRadius: '16px 16px 16px 4px' }}>
                       <Spin size="small" /> <Text type="secondary">思考中...</Text>
                     </div>
                   </div>
@@ -302,16 +310,16 @@ export default function Agent() {
         </div>
 
         {/* 输入区域 */}
-        <div style={{ padding: 16, borderTop: '1px solid #f0f0f0', background: '#fafafa' }}>
-          <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ padding: isMobile ? 12 : 16, borderTop: '1px solid #f0f0f0', background: '#fafafa' }}>
+          <div style={{ display: 'flex', gap: isMobile ? 8 : 12 }}>
             <TextArea
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="输入你的问题... (按 Enter 发送，Shift+Enter 换行)"
-              autoSize={{ minRows: 1, maxRows: 4 }}
+              placeholder={isMobile ? "输入问题..." : "输入你的问题... (按 Enter 发送，Shift+Enter 换行)"}
+              autoSize={{ minRows: 1, maxRows: isMobile ? 3 : 4 }}
               disabled={loading}
-              style={{ flex: 1 }}
+              style={{ flex: 1, fontSize: isMobile ? 14 : 14 }}
             />
             <Button
               type="primary"
@@ -320,8 +328,9 @@ export default function Agent() {
               loading={loading}
               disabled={!input.trim()}
               style={{ height: 'auto', minHeight: 32 }}
+              size={isMobile ? 'middle' : 'middle'}
             >
-              发送
+              {isMobile ? '' : '发送'}
             </Button>
           </div>
         </div>

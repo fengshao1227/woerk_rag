@@ -7,6 +7,7 @@ import {
   FolderOutlined, DatabaseOutlined, KeyOutlined, TeamOutlined, UserOutlined,
   MenuOutlined, CloseOutlined
 } from '@ant-design/icons';
+import useResponsive from '../hooks/useResponsive';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -15,16 +16,7 @@ export default function Layout() {
   const location = useLocation();
   const [user, setUser] = useState(null);
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
-
-  // 使用 window.innerWidth 判断移动端 (< 768px)
-  const isMobile = windowWidth < 768;
-
-  useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  const { isMobile } = useResponsive();
 
   useEffect(() => {
     // 从 localStorage 获取用户信息

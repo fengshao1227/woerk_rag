@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { Input, Button, Card, Spin, Empty, Tag, Collapse, Switch, Tooltip, Popover, Select } from 'antd';
 import { SendOutlined, RobotOutlined, UserOutlined, FileTextOutlined, ThunderboltOutlined, LinkOutlined, FolderOutlined } from '@ant-design/icons';
 import { chatAPI, groupAPI } from '../services/api';
+import useResponsive from '../hooks/useResponsive';
 
 const { TextArea } = Input;
 
@@ -112,15 +113,7 @@ export default function Chat() {
   const messagesEndRef = useRef(null);
   const abortControllerRef = useRef(null);
   const sourceRefs = useRef({});  // 来源元素的引用
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
-  // 使用 window.innerWidth 判断移动端 (< 768px)
-  const isMobile = windowWidth < 768;
-
-  useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  const { isMobile } = useResponsive();
 
   // 加载分组列表
   useEffect(() => {
