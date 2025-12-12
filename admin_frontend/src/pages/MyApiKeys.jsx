@@ -8,74 +8,61 @@ import dayjs from 'dayjs';
 const { Paragraph, Text } = Typography;
 
 // RAG 知识库使用规则
-const RAG_USAGE_RULES = `## RAG知识库使用规则（rag-knowledge MCP）
+const RAG_USAGE_RULES = `## RAG 知识库使用规则
 
-### 核心原则
-
-**知识库是项目记忆的核心，必须持续沉淀细节知识！**
-
----
-
-### 一、强制工作流程
-
-1. **先查RAG** → 使用 \`search(query, group_names="项目名")\` 查询
-2. **RAG 无结果** → 才使用其他工具搜索代码
-3. **任务完成** → **必须** 用 \`add_knowledge\` 保存细节到知识库
-
----
-
-### 二、知识沉淀（最重要！）
-
-#### 强制添加知识的场景
-
-| 场景 | 必须记录的内容 |
-|------|---------------|
-| 阅读代码 | 模块职责、关键类/函数、调用关系、设计模式 |
-| 实现功能 | 实现步骤、核心代码片段、涉及的文件 |
-| 修复 Bug | 问题原因、解决方案、踩坑点 |
-| 技术决策 | 选型原因、优缺点对比、最佳实践 |
-| 发现规律 | 代码规范、命名约定、架构模式 |
-
-#### add_knowledge 参数（强制规范）
-
-\`\`\`
-add_knowledge(
-    content="详细内容",
-    category="project|skill|experience|note",
-    group_names="项目名"  # ⚠️ 强制指定！
-)
-\`\`\`
-
-**参数说明**:
-- \`content\` - 知识内容（500-1500字为宜）
-- \`category\` - 分类：project(项目)/skill(技能)/experience(经验)/note(笔记)
-- \`group_names\` - **必填**！项目名称，多个用逗号分隔
-
-#### 细节要求
-
-- **每次只记录一个主题**，避免混杂
-- **包含具体代码**，不要只写概念
-- **标注文件路径**，方便定位
-- **记录踩坑点**，避免重复犯错
-- **说明"为什么"**，不只记录"是什么"
-
----
-
-### 三、查询规范
+### 可用工具
 
 | 工具 | 用途 | 示例 |
 |------|------|------|
-| \`search\` | 快速检索（优先） | \`search("邮件发送", group_names="my-project")\` |
-| \`query\` | 需要AI 总结时 | \`query("整体架构是怎样的", group_names="my-app")\` |
+| \`search\` | 语义搜索（优先，不耗Token） | \`search("邮件发送", group_names="my-backend")\` |
+| \`query\` | AI综合问答 | \`query("架构是怎样的", top_k=8, group_names="my-backend")\` |
+| \`add_knowledge\` | 添加知识 | \`add_knowledge(content="...", category="note", group_names="my-backend")\` |
+| \`delete_knowledge\` | 删除条目 | \`delete_knowledge(qdrant_id="xxx")\` |
+| \`list_groups\` | 查看所有分组 | \`list_groups()\` |
+| \`stats\` | 知识库统计 | \`stats()\` |
 
----
+### 工作流程
 
-### 四、分组管理
+\`\`\`
+接到任务 → search查RAG → 无结果再搜代码 → 完成后add_knowledge沉淀
+\`\`\`
 
-- \`my-project\` - 示例后端项目
-- \`my-app\` - 示例前端项目
-- 项目相关知识 → 必须指定 \`group_names\`
-- 通用技术知识 → 可不指定，存入全局库
+### 各工具参数
+
+**search**
+- \`query_text\`: 搜索词
+- \`top_k\`: 返回数量（默认5）
+- \`group_names\`: 分组，逗号分隔
+- \`min_score\`: 最低相似度（0-1）
+
+**query**
+- \`question\`: 问题
+- \`top_k\`: 检索数量（复杂问题用8-10）
+- \`group_names\`: 分组
+
+**add_knowledge**
+- \`content\`: 知识内容（必填）
+- \`category\`: project/skill/experience/note
+- \`group_names\`: 分组（强烈建议填）
+- \`title\`: 可选，不填自动生成
+
+**delete_knowledge**
+- \`qdrant_id\`: 条目ID（通过search获取）
+
+### 必须沉淀的场景
+
+| 场景 | 记录内容 |
+|------|----------|
+| 阅读代码 | 模块职责、关键函数、文件路径 |
+| 实现功能 | 实现思路、核心代码、涉及文件 |
+| 修复Bug | 问题原因、解决方案、踩坑点 |
+| 技术决策 | 选型原因、优缺点 |
+
+### 分组示例
+
+- \`my-backend\` - 后端项目
+- \`my-frontend\` - 前端项目
+- \`my-docs\` - 文档项目
 `;
 
 export default function MyApiKeys() {
