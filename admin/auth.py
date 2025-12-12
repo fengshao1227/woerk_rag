@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 from admin.database import get_db
 from admin.models import User, MCPApiKey
+from utils.logger import logger
 
 load_dotenv()
 
