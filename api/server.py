@@ -1,6 +1,7 @@
 """
 FastAPI 服务
 """
+import os
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
@@ -51,13 +52,26 @@ except ImportError as e:
 
 app = FastAPI(title="RAG API", version="1.0.0")
 
-# CORS 配置
+# CORS 配置 - 生产环境应限制允许的域名
+ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+if not ALLOWED_ORIGINS or ALLOWED_ORIGINS == [""]:
+    # 默认允许的域名（生产环境）
+    ALLOWED_ORIGINS = [
+        "https://rag.litxczv.shop",
+        "http://localhost:5173",  # 开发环境
+        "http://localhost:8000",  # 本地测试
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:8000",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Requested-With"],
+    expose_headers=["X-Total-Count", "X-Page", "X-Page-Size"],
+    max_age=600,  # 预检请求缓存 10 分钟
 )
 
 # 注册后台管理路由

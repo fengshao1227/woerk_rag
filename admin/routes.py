@@ -1,7 +1,7 @@
 """
 后台管理 API 路由
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
@@ -10,7 +10,7 @@ from datetime import timedelta
 from admin.database import get_db
 from admin.models import User, LLMProvider, LLMModel, KnowledgeEntry, LLMUsageLog, KnowledgeGroup, KnowledgeGroupItem, KnowledgeVersion, EmbeddingProvider, MCPApiKey, GroupShare
 from admin.schemas import (
-    LoginRequest, TokenResponse, UserResponse,
+    LoginRequest, TokenResponse, UserResponse, RefreshTokenRequest, RefreshTokenResponse,
     ProviderCreate, ProviderUpdate, ProviderResponse,
     ModelCreate, ModelUpdate, ModelResponse,
     KnowledgeUpdate, KnowledgeResponse, KnowledgeListResponse, KnowledgeDetailResponse,
@@ -30,9 +30,11 @@ from admin.schemas import (
     UserCreate, UserUpdate, UserListResponse
 )
 from admin.auth import (
-    authenticate_user, create_access_token, get_current_user,
-    get_password_hash, ACCESS_TOKEN_EXPIRE_HOURS
+    authenticate_user, create_access_token, create_refresh_token, decode_token,
+    get_current_user, get_password_hash, ACCESS_TOKEN_EXPIRE_HOURS
 )
+from admin.rate_limiter import rate_limiter
+from admin.password_validator import validate_password
 import time
 from datetime import datetime, timedelta
 from utils.logger import logger
@@ -54,23 +56,96 @@ def mask_api_key(api_key: str) -> str:
 # 认证接口
 # ============================================================
 @router.post("/auth/login", response_model=TokenResponse)
-async def login(request: LoginRequest, db: Session = Depends(get_db)):
+async def login(request: LoginRequest, req: Request, db: Session = Depends(get_db)):
     """用户登录"""
+    # 获取客户端 IP
+    client_ip = req.headers.get("X-Forwarded-For", req.client.host if req.client else "unknown")
+    if "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+
+    # 检查限流
+    is_allowed, error_msg, remaining_seconds = rate_limiter.check_rate_limit(client_ip, request.username)
+    if not is_allowed:
+        logger.warning(f"登录被限流 - IP: {client_ip}, 用户名: {request.username}")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=error_msg,
+            headers={"Retry-After": str(remaining_seconds)}
+        )
+
     user = authenticate_user(db, request.username, request.password)
     if not user:
+        # 记录失败尝试
+        remaining_attempts, is_locked = rate_limiter.record_failed_attempt(client_ip, request.username)
+        logger.warning(f"登录失败 - IP: {client_ip}, 用户名: {request.username}, 剩余尝试: {remaining_attempts}")
+
+        if is_locked:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="登录失败次数过多，账户已被锁定 5 分钟"
+            )
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户名或密码错误"
+            detail=f"用户名或密码错误（剩余 {remaining_attempts} 次尝试机会）"
         )
+
+    # 登录成功，清除失败记录
+    rate_limiter.record_successful_login(client_ip, request.username)
+    logger.info(f"登录成功 - IP: {client_ip}, 用户名: {request.username}")
 
     access_token = create_access_token(
         data={"sub": user.username},
         expires_delta=timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     )
 
+    refresh_token = create_refresh_token(
+        data={"sub": user.username}
+    )
+
     return TokenResponse(
         access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=ACCESS_TOKEN_EXPIRE_HOURS * 3600,
         user=UserResponse.model_validate(user)
+    )
+
+
+@router.post("/auth/refresh", response_model=RefreshTokenResponse)
+async def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+    """使用刷新 Token 获取新的访问 Token"""
+    payload = decode_token(request.refresh_token, expected_type="refresh")
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="刷新 Token 无效或已过期"
+        )
+
+    username = payload.get("sub")
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="刷新 Token 无效"
+        )
+
+    # 验证用户仍然存在且有效
+    user = db.query(User).filter(User.username == username).first()
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户不存在或已被禁用"
+        )
+
+    # 生成新的访问 Token
+    access_token = create_access_token(
+        data={"sub": username},
+        expires_delta=timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    )
+
+    logger.info(f"Token 刷新成功 - 用户名: {username}")
+    return RefreshTokenResponse(
+        access_token=access_token,
+        expires_in=ACCESS_TOKEN_EXPIRE_HOURS * 3600
     )
 
 
@@ -92,8 +167,17 @@ async def change_password(
     if not verify_password(old_password, current_user.password_hash):
         raise HTTPException(status_code=400, detail="原密码错误")
 
+    # 验证新密码强度
+    is_valid, errors = validate_password(new_password, current_user.username)
+    if not is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail="密码不符合安全要求：\n" + "\n".join(errors)
+        )
+
     current_user.password_hash = get_password_hash(new_password)
     db.commit()
+    logger.info(f"用户 {current_user.username} 修改了密码")
     return MessageResponse(message="密码修改成功")
 
 
@@ -2873,6 +2957,14 @@ async def create_user(
     existing = db.query(User).filter(User.username == data.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="用户名已存在")
+
+    # 验证密码强度
+    is_valid, errors = validate_password(data.password, data.username)
+    if not is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail="密码不符合安全要求：\n" + "\n".join(errors)
+        )
 
     user = User(
         username=data.username,

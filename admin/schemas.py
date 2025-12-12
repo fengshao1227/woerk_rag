@@ -17,8 +17,22 @@ class LoginRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str = ""  # 可选的刷新 Token
     token_type: str = "bearer"
+    expires_in: int = 86400  # Token 有效期（秒）
     user: "UserResponse"
+
+
+class RefreshTokenRequest(BaseModel):
+    """刷新 Token 请求"""
+    refresh_token: str
+
+
+class RefreshTokenResponse(BaseModel):
+    """刷新 Token 响应"""
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int = 86400
 
 
 class UserResponse(BaseModel):
