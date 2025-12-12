@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, message, Popconfirm, Space, Tag, Tooltip, Switch, DatePicker, Typography, Card, Spin } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined, CodeOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, message, Popconfirm, Space, Tag, Tooltip, Switch, DatePicker, Typography, Card, Spin, Alert, Segmented } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined, CodeOutlined, CloudOutlined, DesktopOutlined } from '@ant-design/icons';
 import { apiKeysAPI } from '../services/api';
 import useResponsive from '../hooks/useResponsive';
 import dayjs from 'dayjs';
 
-const { Paragraph } = Typography;
+const { Paragraph, Text } = Typography;
 
 export default function ApiKeys() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [installModalOpen, setInstallModalOpen] = useState(false);
+  const [installMode, setInstallMode] = useState('remote');
+  const [selectedKey, setSelectedKey] = useState(null);
   const [form] = Form.useForm();
   const { isMobile } = useResponsive();
 
@@ -78,24 +81,46 @@ export default function ApiKeys() {
     message.success('已复制到剪贴板');
   };
 
-  // 生成 claude mcp add 命令并复制
-  const handleCopyInstallCommand = async (record) => {
-    const command = `claude mcp add rag-knowledge -s user --transport stdio -e RAG_API_KEY=${record.key} -- uvx --from git+https://github.com/fengshao1227/woerk_rag.git rag-mcp`;
+  // 打开安装命令弹窗
+  const handleShowInstallModal = (record) => {
+    setSelectedKey(record);
+    setInstallModalOpen(true);
+  };
+
+  // 生成远程安装命令（推荐，支持多窗口）
+  const getRemoteInstallCommand = (apiKey) => {
+    return `claude mcp add --transport http -s user rag-knowledge https://rag.litxczv.shop/mcp --header "X-API-Key: ${apiKey}"`;
+  };
+
+  // 生成本地安装命令（本地启动 HTTP 服务，也支持多窗口）
+  const getLocalInstallCommand = (apiKey) => {
+    return `# 1. 先启动本地 MCP 服务（保持运行）
+RAG_API_KEY=${apiKey} python mcp_server/server.py --http
+
+# 2. 然后在另一个终端添加到 Claude
+claude mcp add --transport http -s user rag-knowledge http://127.0.0.1:8766/sse`;
+  };
+
+  // 复制安装命令
+  const handleCopyInstallCommand = async (mode) => {
+    if (!selectedKey) return;
+    const command = mode === 'remote'
+      ? getRemoteInstallCommand(selectedKey.key)
+      : getLocalInstallCommand(selectedKey.key);
+
     try {
       await navigator.clipboard.writeText(command);
-      message.success('安装命令已复制，请在终端粘贴执行');
+      message.success('安装命令已复制');
     } catch (err) {
-      // fallback: 创建临时文本框复制
       const textArea = document.createElement('textarea');
       textArea.value = command;
       document.body.appendChild(textArea);
       textArea.select();
       try {
         document.execCommand('copy');
-        message.success('安装命令已复制，请在终端粘贴执行');
+        message.success('安装命令已复制');
       } catch (e) {
         message.error('复制失败，请手动复制');
-        console.error('Copy failed:', e);
       }
       document.body.removeChild(textArea);
     }
@@ -187,8 +212,8 @@ export default function ApiKeys() {
       width: 180,
       render: (_, record) => (
         <Space size={4}>
-          <Tooltip title="复制安装命令">
-            <Button icon={<CodeOutlined />} size="small" onClick={() => handleCopyInstallCommand(record)} />
+          <Tooltip title="安装到 Claude">
+            <Button icon={<CodeOutlined />} size="small" onClick={() => handleShowInstallModal(record)} />
           </Tooltip>
           <Tooltip title="编辑">
             <Button icon={<EditOutlined />} size="small" onClick={() => handleEdit(record)} />
@@ -249,7 +274,7 @@ export default function ApiKeys() {
             </Space>
           </div>
           <Space direction="vertical" size={4}>
-            <Button size="small" icon={<CodeOutlined />} onClick={() => handleCopyInstallCommand(record)}>安装</Button>
+            <Button size="small" icon={<CodeOutlined />} onClick={() => handleShowInstallModal(record)}>安装</Button>
             <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
             <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
               <Button size="small" danger icon={<DeleteOutlined />} />
@@ -358,6 +383,125 @@ export default function ApiKeys() {
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 安装命令弹窗 */}
+      <Modal
+        title={<><CodeOutlined /> 安装到 Claude</>}
+        open={installModalOpen}
+        onCancel={() => {
+          setInstallModalOpen(false);
+          setSelectedKey(null);
+        }}
+        footer={[
+          <Button key="close" onClick={() => setInstallModalOpen(false)}>关闭</Button>,
+          <Button key="copy" type="primary" icon={<CopyOutlined />} onClick={() => handleCopyInstallCommand(installMode)}>
+            复制命令
+          </Button>
+        ]}
+        width={isMobile ? '95vw' : 700}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Text strong>选择安装方式：</Text>
+        </div>
+
+        <Segmented
+          block
+          value={installMode}
+          onChange={setInstallMode}
+          options={[
+            {
+              label: (
+                <div style={{ padding: '8px 0' }}>
+                  <CloudOutlined style={{ marginRight: 8 }} />
+                  远程模式（推荐）
+                </div>
+              ),
+              value: 'remote'
+            },
+            {
+              label: (
+                <div style={{ padding: '8px 0' }}>
+                  <DesktopOutlined style={{ marginRight: 8 }} />
+                  本地模式
+                </div>
+              ),
+              value: 'local'
+            }
+          ]}
+          style={{ marginBottom: 16 }}
+        />
+
+        {installMode === 'remote' ? (
+          <Alert
+            type="success"
+            showIcon
+            icon={<CloudOutlined />}
+            message="远程模式（推荐）"
+            description={
+              <div style={{ fontSize: isMobile ? 12 : 14 }}>
+                <p><Text strong>优点：</Text></p>
+                <ul style={{ paddingLeft: 20, margin: '8px 0' }}>
+                  <li>✅ 支持多窗口多会话并发</li>
+                  <li>✅ 无需本地环境</li>
+                  <li>✅ 服务端 24/7 在线</li>
+                  <li>✅ 一条命令即可</li>
+                </ul>
+              </div>
+            }
+            style={{ marginBottom: 16 }}
+          />
+        ) : (
+          <Alert
+            type="info"
+            showIcon
+            icon={<DesktopOutlined />}
+            message="本地模式（HTTP 多窗口）"
+            description={
+              <div style={{ fontSize: isMobile ? 12 : 14 }}>
+                <p><Text strong>特点：</Text></p>
+                <ul style={{ paddingLeft: 20, margin: '8px 0' }}>
+                  <li>✅ 支持多窗口多会话</li>
+                  <li>需要克隆项目到本地</li>
+                  <li>需要先启动本地 MCP 服务</li>
+                  <li>适合离线或自定义场景</li>
+                </ul>
+              </div>
+            }
+            style={{ marginBottom: 16 }}
+          />
+        )}
+
+        <div style={{ marginTop: 16 }}>
+          <Text strong>安装命令：</Text>
+          <div style={{
+            marginTop: 8,
+            padding: 12,
+            background: '#f5f5f5',
+            borderRadius: 6,
+            fontFamily: 'monospace',
+            fontSize: isMobile ? 11 : 13,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            lineHeight: 1.6
+          }}>
+            {selectedKey && (installMode === 'remote'
+              ? getRemoteInstallCommand(selectedKey.key)
+              : getLocalInstallCommand(selectedKey.key)
+            )}
+          </div>
+        </div>
+
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginTop: 16 }}
+          message="使用说明"
+          description={installMode === 'remote'
+            ? "复制命令在终端执行，然后重启 Claude 即可。"
+            : "先启动本地 MCP 服务，再在另一个终端执行添加命令，最后重启 Claude。"
+          }
+        />
       </Modal>
     </div>
   );

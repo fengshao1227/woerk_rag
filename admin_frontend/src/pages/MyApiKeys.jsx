@@ -146,9 +146,13 @@ export default function MyApiKeys() {
     return `claude mcp add --transport http -s user rag-knowledge https://rag.litxczv.shop/mcp --header "X-API-Key: ${apiKey}"`;
   };
 
-  // 生成本地安装命令（需要 Python 环境）
+  // 生成本地安装命令（本地启动 HTTP 服务，也支持多窗口）
   const getLocalInstallCommand = (apiKey) => {
-    return `claude mcp add rag-knowledge -s user --transport stdio -e RAG_API_KEY=${apiKey} -- uvx --from git+https://github.com/fengshao1227/woerk_rag.git rag-mcp`;
+    return `# 1. 先启动本地 MCP 服务（保持运行）
+RAG_API_KEY=${apiKey} python mcp_server/server.py --http
+
+# 2. 然后在另一个终端添加到 Claude
+claude mcp add --transport http -s user rag-knowledge http://127.0.0.1:8766/sse`;
   };
 
   // 复制安装命令
@@ -561,18 +565,16 @@ export default function MyApiKeys() {
             type="info"
             showIcon
             icon={<DesktopOutlined />}
-            message="本地模式"
+            message="本地模式（HTTP 多窗口）"
             description={
               <div style={{ fontSize: isMobile ? 12 : 14 }}>
                 <p><Text strong>特点：</Text></p>
                 <ul style={{ paddingLeft: 20, margin: '8px 0' }}>
-                  <li>需要本地安装 <Text code>uv</Text> 和 Python</li>
-                  <li>每次启动 Claude 时本地运行 MCP Server</li>
-                  <li>适合离线使用或自定义需求</li>
+                  <li>✅ 支持多窗口多会话</li>
+                  <li>需要克隆项目到本地</li>
+                  <li>需要先启动本地 MCP 服务</li>
+                  <li>适合离线或自定义场景</li>
                 </ul>
-                <p style={{ marginTop: 8, color: '#666' }}>
-                  先安装 uv：<Text code copyable={{ text: 'curl -LsSf https://astral.sh/uv/install.sh | sh' }}>curl -LsSf https://astral.sh/uv/install.sh | sh</Text>
-                </p>
               </div>
             }
             style={{ marginBottom: 16 }}
@@ -603,7 +605,10 @@ export default function MyApiKeys() {
           showIcon
           style={{ marginTop: 16 }}
           message="使用说明"
-          description="复制命令后在终端粘贴执行，然后重启 Claude Desktop 即可使用。"
+          description={installMode === 'remote'
+            ? "复制命令在终端执行，然后重启 Claude 即可。"
+            : "先启动本地 MCP 服务，再在另一个终端执行添加命令，最后重启 Claude。"
+          }
         />
       </Modal>
     </div>
