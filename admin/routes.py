@@ -1126,6 +1126,78 @@ async def delete_knowledge(
     return MessageResponse(message="知识条目已删除")
 
 
+@router.delete("/knowledge/by-qdrant-id/{qdrant_id}", response_model=MessageResponse)
+async def delete_knowledge_by_qdrant_id(
+    qdrant_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """通过 qdrant_id 删除知识条目（MCP 工具专用）"""
+    entry = db.query(KnowledgeEntry).filter(KnowledgeEntry.qdrant_id == qdrant_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="知识条目不存在")
+
+    # 权限检查：管理员可删除所有，普通用户只能删除自己的
+    if current_user.role != "admin" and entry.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权删除他人的知识条目")
+
+    # 复用现有删除逻辑 - 调用原删除函数
+    from fastapi import Request
+    # 直接执行删除逻辑
+    knowledge_id = entry.id
+
+    # 0. 创建删除版本记录
+    try:
+        from utils.version_tracker import track_knowledge_change
+        metadata = {
+            "title": entry.title,
+            "category": entry.category,
+            "summary": entry.summary,
+            "keywords": entry.keywords,
+            "tech_stack": entry.tech_stack
+        }
+        track_knowledge_change(
+            qdrant_id=qdrant_id,
+            content=entry.content_preview or "",
+            metadata=metadata,
+            change_type="delete",
+            user=current_user.username,
+            reason="删除知识条目"
+        )
+    except Exception as e:
+        logger.warning(f"版本追踪失败: {e}")
+
+    # 1. 从 Qdrant 删除向量
+    qdrant_delete_failed = False
+    try:
+        from qdrant_client import QdrantClient
+        from config import QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY, QDRANT_COLLECTION_NAME
+
+        client = QdrantClient(
+            host=QDRANT_HOST,
+            port=QDRANT_PORT,
+            api_key=QDRANT_API_KEY if QDRANT_API_KEY else None
+        )
+        client.delete(
+            collection_name=QDRANT_COLLECTION_NAME,
+            points_selector={"points": [qdrant_id]}
+        )
+    except Exception as e:
+        logger.error(f"从 Qdrant 删除失败: {e}")
+        qdrant_delete_failed = True
+
+    # 2. 删除分组关联
+    db.query(KnowledgeGroupItem).filter(KnowledgeGroupItem.knowledge_id == knowledge_id).delete()
+
+    # 3. 从 MySQL 删除
+    db.delete(entry)
+    db.commit()
+
+    if qdrant_delete_failed:
+        return MessageResponse(message="知识条目已从索引删除，但向量数据删除失败")
+    return MessageResponse(message="知识条目已删除")
+
+
 @router.get("/knowledge/export/all")
 async def export_knowledge(
     category: Optional[str] = None,

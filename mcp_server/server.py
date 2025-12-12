@@ -489,7 +489,7 @@ def delete_knowledge(qdrant_id: str) -> str:
 
         with httpx.Client(timeout=30.0) as client:
             response = client.delete(
-                f"{RAG_API_BASE}/admin/api/knowledge/{qdrant_id}",
+                f"{RAG_API_BASE}/admin/api/knowledge/by-qdrant-id/{qdrant_id}",
                 headers=headers
             )
 
