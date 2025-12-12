@@ -607,3 +607,49 @@ class MCPApiKeyVerifyResponse(BaseModel):
     message: str
     name: Optional[str] = None
 
+
+# ============================================================
+# 分组共享相关
+# ============================================================
+class GroupShareCreate(BaseModel):
+    """创建分组共享请求"""
+    shared_with_user_id: int = Field(..., description="共享给的用户ID")
+    permission: str = Field(default="read", pattern="^(read|write)$", description="权限: read=只读, write=可编辑")
+
+
+class GroupShareUpdate(BaseModel):
+    """更新分组共享请求"""
+    permission: str = Field(..., pattern="^(read|write)$", description="权限: read=只读, write=可编辑")
+
+
+class GroupShareResponse(BaseModel):
+    """分组共享响应"""
+    id: int
+    group_id: int
+    group_name: str = ""  # 分组名称
+    shared_with_user_id: int
+    shared_with_username: str = ""  # 被共享用户名
+    shared_by_user_id: int
+    shared_by_username: str = ""  # 共享者用户名
+    permission: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class GroupShareListResponse(BaseModel):
+    """分组共享列表响应"""
+    items: List[GroupShareResponse]
+    total: int
+
+
+class UserSimpleResponse(BaseModel):
+    """用户简单信息（用于共享选择）"""
+    id: int
+    username: str
+    role: str
+
+    class Config:
+        from_attributes = True
+

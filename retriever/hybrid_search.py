@@ -29,7 +29,10 @@ def get_user_accessible_qdrant_ids(user_id: int) -> set:
     """
     获取用户可访问的所有 qdrant_id
 
-    规则: user_id = current_user.id OR is_public = true
+    规则:
+    1. 用户自己的知识 (user_id = current_user.id)
+    2. 公开的知识 (is_public = true)
+    3. 共享给用户的分组中的知识 (通过 group_shares 表)
 
     Args:
         user_id: 当前用户ID
@@ -42,18 +45,35 @@ def get_user_accessible_qdrant_ids(user_id: int) -> set:
 
     try:
         from admin.database import SessionLocal
-        from admin.models import KnowledgeEntry
+        from admin.models import KnowledgeEntry, GroupShare, KnowledgeGroupItem
         from sqlalchemy import or_
 
         db = SessionLocal()
         try:
+            # 1. 获取用户自己的知识和公开知识
             entries = db.query(KnowledgeEntry.qdrant_id).filter(
                 or_(
                     KnowledgeEntry.user_id == user_id,
                     KnowledgeEntry.is_public == True
                 )
             ).all()
-            return {normalize_uuid(e[0]) for e in entries if e[0]}
+            accessible_ids = {normalize_uuid(e[0]) for e in entries if e[0]}
+
+            # 2. 获取共享给用户的分组中的知识
+            shared_group_ids = db.query(GroupShare.group_id).filter(
+                GroupShare.shared_with_user_id == user_id
+            ).all()
+            shared_group_ids = [g[0] for g in shared_group_ids]
+
+            if shared_group_ids:
+                shared_items = db.query(KnowledgeGroupItem.qdrant_id).filter(
+                    KnowledgeGroupItem.group_id.in_(shared_group_ids)
+                ).all()
+                for item in shared_items:
+                    if item[0]:
+                        accessible_ids.add(normalize_uuid(item[0]))
+
+            return accessible_ids
         finally:
             db.close()
     except Exception as e:

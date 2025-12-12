@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Space, Tag, Card, Row, Col, Badge, Tooltip, Transfer } from 'antd';
-import { EditOutlined, DeleteOutlined, PlusOutlined, FolderOutlined, AppstoreOutlined, SettingOutlined, InboxOutlined } from '@ant-design/icons';
-import { groupAPI, knowledgeAPI } from '../services/api';
+import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Space, Tag, Card, Row, Col, Badge, Tooltip, Transfer, List, Switch } from 'antd';
+import { EditOutlined, DeleteOutlined, PlusOutlined, FolderOutlined, AppstoreOutlined, SettingOutlined, InboxOutlined, ShareAltOutlined, UserOutlined, LockOutlined, GlobalOutlined } from '@ant-design/icons';
+import { groupAPI, knowledgeAPI, userAPI } from '../services/api';
 
 // 预定义颜色
 const COLORS = [
@@ -45,6 +45,14 @@ export default function Groups() {
   const [assignTargetGroup, setAssignTargetGroup] = useState(null);
   const [selectedUngroupedKeys, setSelectedUngroupedKeys] = useState([]);
   const [ungroupedItems, setUngroupedItems] = useState([]);
+
+  // 分组共享管理
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareGroup, setShareGroup] = useState(null);
+  const [shares, setShares] = useState([]);
+  const [sharesLoading, setSharesLoading] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [addShareForm] = Form.useForm();
 
   const loadGroups = async () => {
     setLoading(true);
@@ -192,6 +200,68 @@ export default function Groups() {
     }
   };
 
+  // 打开共享管理弹窗
+  const handleManageShares = async (group) => {
+    setShareGroup(group);
+    setShareModalOpen(true);
+    setSharesLoading(true);
+    addShareForm.resetFields();
+
+    try {
+      // 并行加载共享列表和用户列表
+      const [sharesRes, usersRes] = await Promise.all([
+        groupAPI.listShares(group.id),
+        userAPI.listForShare()
+      ]);
+      setShares(sharesRes.data.items || []);
+      setUsers(usersRes.data || []);
+    } catch (error) {
+      message.error('加载共享信息失败');
+    } finally {
+      setSharesLoading(false);
+    }
+  };
+
+  // 添加共享
+  const handleAddShare = async (values) => {
+    try {
+      await groupAPI.createShare(shareGroup.id, values.userId, values.permission);
+      message.success('共享成功');
+      addShareForm.resetFields();
+      // 重新加载共享列表
+      const { data } = await groupAPI.listShares(shareGroup.id);
+      setShares(data.items || []);
+    } catch (error) {
+      message.error(error.response?.data?.detail || '共享失败');
+    }
+  };
+
+  // 更新共享权限
+  const handleUpdateSharePermission = async (shareId, newPermission) => {
+    try {
+      await groupAPI.updateShare(shareGroup.id, shareId, newPermission);
+      message.success('权限已更新');
+      // 重新加载共享列表
+      const { data } = await groupAPI.listShares(shareGroup.id);
+      setShares(data.items || []);
+    } catch (error) {
+      message.error(error.response?.data?.detail || '更新失败');
+    }
+  };
+
+  // 删除共享
+  const handleDeleteShare = async (shareId) => {
+    try {
+      await groupAPI.deleteShare(shareGroup.id, shareId);
+      message.success('已取消共享');
+      // 重新加载共享列表
+      const { data } = await groupAPI.listShares(shareGroup.id);
+      setShares(data.items || []);
+    } catch (error) {
+      message.error(error.response?.data?.detail || '取消共享失败');
+    }
+  };
+
   // 表格列定义
   const columns = [
     {
@@ -242,7 +312,7 @@ export default function Groups() {
     },
     {
       title: '操作',
-      width: 180,
+      width: 220,
       render: (_, record) => (
         <Space>
           <Tooltip title={record.is_default ? "分配到其他分组" : "管理条目"}>
@@ -250,6 +320,9 @@ export default function Groups() {
           </Tooltip>
           {!record.is_default && (
             <>
+              <Tooltip title="共享设置">
+                <Button size="small" icon={<ShareAltOutlined />} onClick={() => handleManageShares(record)} />
+              </Tooltip>
               <Tooltip title="编辑">
                 <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
               </Tooltip>
@@ -448,6 +521,108 @@ export default function Groups() {
           pagination={{ pageSize: 10 }}
           scroll={{ y: 300 }}
         />
+      </Modal>
+
+      {/* 分组共享管理弹窗 */}
+      <Modal
+        title={
+          <Space>
+            <ShareAltOutlined />
+            <span>分组共享设置</span>
+            {shareGroup && (
+              <Tag color={shareGroup.color}>{shareGroup.name}</Tag>
+            )}
+          </Space>
+        }
+        open={shareModalOpen}
+        onCancel={() => { setShareModalOpen(false); setShareGroup(null); }}
+        footer={null}
+        width={600}
+      >
+        {/* 添加共享表单 */}
+        <Card size="small" title="添加共享" style={{ marginBottom: 16 }}>
+          <Form
+            form={addShareForm}
+            layout="inline"
+            onFinish={handleAddShare}
+          >
+            <Form.Item
+              name="userId"
+              rules={[{ required: true, message: '请选择用户' }]}
+              style={{ width: 180 }}
+            >
+              <Select placeholder="选择用户">
+                {users.filter(u => !shares.find(s => s.shared_with_user_id === u.id)).map(u => (
+                  <Select.Option key={u.id} value={u.id}>
+                    <Space>
+                      <UserOutlined />
+                      {u.username}
+                      <Tag size="small">{u.role}</Tag>
+                    </Space>
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+            <Form.Item
+              name="permission"
+              initialValue="read"
+              rules={[{ required: true }]}
+              style={{ width: 120 }}
+            >
+              <Select>
+                <Select.Option value="read">只读</Select.Option>
+                <Select.Option value="write">可编辑</Select.Option>
+              </Select>
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit" icon={<PlusOutlined />}>
+                共享
+              </Button>
+            </Form.Item>
+          </Form>
+        </Card>
+
+        {/* 已共享列表 */}
+        <Card size="small" title={`已共享给 ${shares.length} 人`} loading={sharesLoading}>
+          {shares.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>
+              <LockOutlined style={{ fontSize: 24, marginBottom: 8 }} />
+              <div>此分组尚未共享给任何人</div>
+            </div>
+          ) : (
+            <List
+              size="small"
+              dataSource={shares}
+              renderItem={share => (
+                <List.Item
+                  actions={[
+                    <Select
+                      size="small"
+                      value={share.permission}
+                      onChange={(value) => handleUpdateSharePermission(share.id, value)}
+                      style={{ width: 90 }}
+                    >
+                      <Select.Option value="read">只读</Select.Option>
+                      <Select.Option value="write">可编辑</Select.Option>
+                    </Select>,
+                    <Popconfirm
+                      title="确认取消共享?"
+                      onConfirm={() => handleDeleteShare(share.id)}
+                    >
+                      <Button size="small" danger icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                  ]}
+                >
+                  <List.Item.Meta
+                    avatar={<UserOutlined style={{ fontSize: 18, color: '#1890ff' }} />}
+                    title={share.shared_with_username}
+                    description={`由 ${share.shared_by_username} 共享于 ${new Date(share.created_at).toLocaleString()}`}
+                  />
+                </List.Item>
+              )}
+            />
+          )}
+        </Card>
       </Modal>
     </div>
   );

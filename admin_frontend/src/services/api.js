@@ -97,7 +97,19 @@ export const groupAPI = {
   // 分组内知识条目管理
   listItems: id => api.get(`/groups/${id}/items`),
   addItems: (id, qdrantIds) => api.post(`/groups/${id}/items`, { qdrant_ids: qdrantIds }),
-  removeItem: (id, qdrantId) => api.delete(`/groups/${id}/items`, { data: { qdrant_ids: [qdrantId] } })
+  removeItem: (id, qdrantId) => api.delete(`/groups/${id}/items`, { data: { qdrant_ids: [qdrantId] } }),
+  // 分组共享管理
+  listShares: id => api.get(`/groups/${id}/shares`),
+  createShare: (id, userId, permission) => api.post(`/groups/${id}/shares`, { shared_with_user_id: userId, permission }),
+  updateShare: (groupId, shareId, permission) => api.put(`/groups/${groupId}/shares/${shareId}`, { permission }),
+  deleteShare: (groupId, shareId) => api.delete(`/groups/${groupId}/shares/${shareId}`),
+  // 获取共享给我的分组
+  listSharedWithMe: () => api.get('/my-shared-groups')
+};
+
+// 用户 API（用于共享选择）
+export const userAPI = {
+  listForShare: () => api.get('/users/list')
 };
 
 // 版本追踪 API

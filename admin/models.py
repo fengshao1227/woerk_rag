@@ -260,6 +260,29 @@ class KnowledgeTask(Base):
     )
 
 
+class GroupShare(Base):
+    """分组共享表 - 支持将分组共享给指定用户"""
+    __tablename__ = "group_shares"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("knowledge_groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    shared_with_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    shared_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    permission = Column(Enum('read', 'write'), default='read')  # read=只读, write=可编辑
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+    # 关联
+    group = relationship("KnowledgeGroup", foreign_keys=[group_id])
+    shared_with_user = relationship("User", foreign_keys=[shared_with_user_id])
+    shared_by_user = relationship("User", foreign_keys=[shared_by_user_id])
+
+    # 联合唯一约束：同一分组不能重复共享给同一用户
+    __table_args__ = (
+        UniqueConstraint('group_id', 'shared_with_user_id', name='uq_group_share'),
+        {'mysql_charset': 'utf8mb4'},
+    )
+
+
 class MCPApiKey(Base):
     """MCP API 卡密表"""
     __tablename__ = "mcp_api_keys"

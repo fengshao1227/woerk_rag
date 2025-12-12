@@ -8,7 +8,7 @@ from typing import List, Optional
 from datetime import timedelta
 
 from admin.database import get_db
-from admin.models import User, LLMProvider, LLMModel, KnowledgeEntry, LLMUsageLog, KnowledgeGroup, KnowledgeGroupItem, KnowledgeVersion, EmbeddingProvider, MCPApiKey
+from admin.models import User, LLMProvider, LLMModel, KnowledgeEntry, LLMUsageLog, KnowledgeGroup, KnowledgeGroupItem, KnowledgeVersion, EmbeddingProvider, MCPApiKey, GroupShare
 from admin.schemas import (
     LoginRequest, TokenResponse, UserResponse,
     ProviderCreate, ProviderUpdate, ProviderResponse,
@@ -25,7 +25,8 @@ from admin.schemas import (
     RollbackRequest, RollbackResponse,
     RemoteModelItem, RemoteModelsResponse, BalanceResponse, BatchModelCreate, BatchModelResponse,
     EmbeddingProviderCreate, EmbeddingProviderUpdate, EmbeddingProviderResponse, TestEmbeddingRequest,
-    MCPApiKeyCreate, MCPApiKeyUpdate, MCPApiKeyResponse, MCPApiKeyListResponse
+    MCPApiKeyCreate, MCPApiKeyUpdate, MCPApiKeyResponse, MCPApiKeyListResponse,
+    GroupShareCreate, GroupShareUpdate, GroupShareResponse, GroupShareListResponse, UserSimpleResponse
 )
 from admin.auth import (
     authenticate_user, create_access_token, get_current_user,
@@ -2440,3 +2441,216 @@ async def delete_api_key(
     db.delete(api_key)
     db.commit()
     return MessageResponse(message="卡密已删除")
+
+
+# ============================================================
+# 分组共享管理
+# ============================================================
+@router.get("/users/list", response_model=List[UserSimpleResponse])
+async def list_users_for_share(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取可共享的用户列表（排除当前用户）"""
+    users = db.query(User).filter(
+        User.id != current_user.id,
+        User.is_active == True
+    ).all()
+    return [UserSimpleResponse.model_validate(u) for u in users]
+
+
+@router.get("/groups/{group_id}/shares", response_model=GroupShareListResponse)
+async def list_group_shares(
+    group_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取分组的共享列表"""
+    group = db.query(KnowledgeGroup).filter(KnowledgeGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="分组不存在")
+
+    # 只有分组所有者或管理员可以查看共享列表
+    if current_user.role != "admin" and group.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权查看此分组的共享列表")
+
+    shares = db.query(GroupShare).filter(GroupShare.group_id == group_id).all()
+
+    result = []
+    for share in shares:
+        result.append(GroupShareResponse(
+            id=share.id,
+            group_id=share.group_id,
+            group_name=group.name,
+            shared_with_user_id=share.shared_with_user_id,
+            shared_with_username=share.shared_with_user.username if share.shared_with_user else "",
+            shared_by_user_id=share.shared_by_user_id,
+            shared_by_username=share.shared_by_user.username if share.shared_by_user else "",
+            permission=share.permission,
+            created_at=share.created_at
+        ))
+
+    return GroupShareListResponse(items=result, total=len(result))
+
+
+@router.post("/groups/{group_id}/shares", response_model=GroupShareResponse)
+async def create_group_share(
+    group_id: int,
+    data: GroupShareCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """创建分组共享"""
+    group = db.query(KnowledgeGroup).filter(KnowledgeGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="分组不存在")
+
+    # 只有分组所有者或管理员可以共享
+    if current_user.role != "admin" and group.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权共享此分组")
+
+    # 检查目标用户是否存在
+    target_user = db.query(User).filter(User.id == data.shared_with_user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="目标用户不存在")
+
+    # 不能共享给自己
+    if data.shared_with_user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="不能共享给自己")
+
+    # 检查是否已存在共享
+    existing = db.query(GroupShare).filter(
+        GroupShare.group_id == group_id,
+        GroupShare.shared_with_user_id == data.shared_with_user_id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="已存在对该用户的共享")
+
+    share = GroupShare(
+        group_id=group_id,
+        shared_with_user_id=data.shared_with_user_id,
+        shared_by_user_id=current_user.id,
+        permission=data.permission
+    )
+    db.add(share)
+    db.commit()
+    db.refresh(share)
+
+    return GroupShareResponse(
+        id=share.id,
+        group_id=share.group_id,
+        group_name=group.name,
+        shared_with_user_id=share.shared_with_user_id,
+        shared_with_username=target_user.username,
+        shared_by_user_id=share.shared_by_user_id,
+        shared_by_username=current_user.username,
+        permission=share.permission,
+        created_at=share.created_at
+    )
+
+
+@router.put("/groups/{group_id}/shares/{share_id}", response_model=GroupShareResponse)
+async def update_group_share(
+    group_id: int,
+    share_id: int,
+    data: GroupShareUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """更新分组共享权限"""
+    share = db.query(GroupShare).filter(
+        GroupShare.id == share_id,
+        GroupShare.group_id == group_id
+    ).first()
+    if not share:
+        raise HTTPException(status_code=404, detail="共享记录不存在")
+
+    group = db.query(KnowledgeGroup).filter(KnowledgeGroup.id == group_id).first()
+
+    # 只有分组所有者或管理员可以修改
+    if current_user.role != "admin" and group.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权修改此共享")
+
+    share.permission = data.permission
+    db.commit()
+    db.refresh(share)
+
+    return GroupShareResponse(
+        id=share.id,
+        group_id=share.group_id,
+        group_name=group.name,
+        shared_with_user_id=share.shared_with_user_id,
+        shared_with_username=share.shared_with_user.username if share.shared_with_user else "",
+        shared_by_user_id=share.shared_by_user_id,
+        shared_by_username=share.shared_by_user.username if share.shared_by_user else "",
+        permission=share.permission,
+        created_at=share.created_at
+    )
+
+
+@router.delete("/groups/{group_id}/shares/{share_id}", response_model=MessageResponse)
+async def delete_group_share(
+    group_id: int,
+    share_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """取消分组共享"""
+    share = db.query(GroupShare).filter(
+        GroupShare.id == share_id,
+        GroupShare.group_id == group_id
+    ).first()
+    if not share:
+        raise HTTPException(status_code=404, detail="共享记录不存在")
+
+    group = db.query(KnowledgeGroup).filter(KnowledgeGroup.id == group_id).first()
+
+    # 只有分组所有者或管理员可以取消共享
+    if current_user.role != "admin" and group.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权取消此共享")
+
+    db.delete(share)
+    db.commit()
+    return MessageResponse(message="已取消共享")
+
+
+@router.get("/my-shared-groups", response_model=KnowledgeGroupListResponse)
+async def list_my_shared_groups(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取共享给我的分组列表"""
+    # 查找所有共享给当前用户的分组
+    shares = db.query(GroupShare).filter(
+        GroupShare.shared_with_user_id == current_user.id
+    ).all()
+
+    group_ids = [s.group_id for s in shares]
+    if not group_ids:
+        return KnowledgeGroupListResponse(items=[], total=0)
+
+    groups = db.query(KnowledgeGroup).filter(
+        KnowledgeGroup.id.in_(group_ids),
+        KnowledgeGroup.is_active == True
+    ).all()
+
+    result = []
+    for group in groups:
+        items_count = db.query(func.count(KnowledgeGroupItem.id)).filter(
+            KnowledgeGroupItem.group_id == group.id
+        ).scalar()
+        result.append(KnowledgeGroupResponse(
+            id=group.id,
+            name=group.name,
+            description=group.description,
+            color=group.color,
+            icon=group.icon,
+            is_active=group.is_active,
+            user_id=group.user_id,
+            is_public=group.is_public,
+            items_count=items_count or 0,
+            created_at=group.created_at,
+            updated_at=group.updated_at
+        ))
+
+    return KnowledgeGroupListResponse(items=result, total=len(result))
