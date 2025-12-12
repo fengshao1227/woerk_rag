@@ -24,7 +24,7 @@ echo -e "${GREEN}========== RAG 快速部署 ==========${NC}"
 FRONTEND_DIR="$PROJECT_DIR/admin_frontend"
 FRONTEND_CHANGED=false
 
-# 检查 admin_frontend/src 目录是否有更改
+# 检查 admin_frontend/src 目录是否有更改（未提交的）
 if [[ -n $(git status --porcelain "$FRONTEND_DIR/src" 2>/dev/null) ]]; then
     FRONTEND_CHANGED=true
 fi
@@ -69,7 +69,8 @@ ssh ${REMOTE_USER}@${REMOTE_HOST} "bash -s" << 'ENDSSH'
 
     cd ~/rag
     echo "→ 拉取最新代码..."
-    git pull origin main
+    git fetch origin main
+    git reset --hard origin/main
 
     echo "→ 激活虚拟环境..."
     source venv/bin/activate
@@ -80,13 +81,11 @@ ssh ${REMOTE_USER}@${REMOTE_HOST} "bash -s" << 'ENDSSH'
     echo "✓ 服务器更新完成"
 ENDSSH
 
-# 4. 如果前端有更改，上传 dist 目录
+# 4. 前端文件已通过 git pull 同步，无需额外上传
 if [ "$FRONTEND_CHANGED" = true ]; then
-    echo -e "${YELLOW}[4/5] 上传前端文件...${NC}"
-    scp -r -o StrictHostKeyChecking=no "$FRONTEND_DIR/dist/"* ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/admin_frontend/dist/
-    echo "✓ 前端上传完成"
+    echo -e "${GREEN}[4/5] 前端已通过 Git 同步${NC}"
 else
-    echo -e "${GREEN}[4/5] 前端无更改，跳过上传${NC}"
+    echo -e "${GREEN}[4/5] 前端无更改${NC}"
 fi
 
 # 5. 健康检查
