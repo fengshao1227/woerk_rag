@@ -785,6 +785,7 @@ async def list_knowledge(
     # 批量获取所有知识的分组信息
     item_qdrant_ids = [item.qdrant_id for item in items if item.qdrant_id]
     qdrant_to_groups = {}
+    qdrant_to_group_ids = {}  # qdrant_id -> [group_id, ...]
     if item_qdrant_ids:
         group_items = db.query(KnowledgeGroupItem).filter(
             KnowledgeGroupItem.qdrant_id.in_(item_qdrant_ids)
@@ -794,17 +795,50 @@ async def list_knowledge(
         if group_ids:
             groups = db.query(KnowledgeGroup).filter(KnowledgeGroup.id.in_(group_ids)).all()
             for g in groups:
-                groups_map[g.id] = {"id": g.id, "name": g.name, "is_public": g.is_public}
+                groups_map[g.id] = {"id": g.id, "name": g.name, "is_public": g.is_public, "user_id": g.user_id}
         for gi in group_items:
             if gi.qdrant_id not in qdrant_to_groups:
                 qdrant_to_groups[gi.qdrant_id] = []
+                qdrant_to_group_ids[gi.qdrant_id] = []
             if gi.group_id in groups_map:
                 qdrant_to_groups[gi.qdrant_id].append(groups_map[gi.group_id])
+                qdrant_to_group_ids[gi.qdrant_id].append(gi.group_id)
+
+    # 获取当前用户有 write 权限的共享分组
+    user_write_group_ids = set()
+    if current_user.role != "admin":
+        shared_writes = db.query(GroupShare.group_id).filter(
+            GroupShare.shared_with_user_id == current_user.id,
+            GroupShare.permission == 'write'
+        ).all()
+        user_write_group_ids = {s[0] for s in shared_writes}
 
     knowledge_items = []
     for item in items:
         # 获取该知识所属的分组列表
         item_groups = qdrant_to_groups.get(item.qdrant_id, [])
+        item_group_ids = qdrant_to_group_ids.get(item.qdrant_id, [])
+
+        # 判断用户是否可以编辑该知识
+        # 规则：管理员可编辑所有，普通用户可编辑：1.自己创建的 2.自己分组内的 3.有write权限的共享分组内的
+        can_edit = False
+        if current_user.role == "admin":
+            can_edit = True
+        elif item.user_id == current_user.id:
+            # 自己创建的知识
+            can_edit = True
+        else:
+            # 检查知识所属分组：用户自己的分组 或 有 write 权限的共享分组
+            for grp in item_groups:
+                if grp.get("user_id") == current_user.id:
+                    can_edit = True
+                    break
+            if not can_edit:
+                for gid in item_group_ids:
+                    if gid in user_write_group_ids:
+                        can_edit = True
+                        break
+
         item_dict = {
             "id": item.id,
             "qdrant_id": item.qdrant_id,
@@ -818,6 +852,7 @@ async def list_knowledge(
             "is_public": item.is_public if item.is_public is not None else True,
             "username": item.user.username if item.user else None,
             "groups": item_groups,  # 新增：分组列表
+            "can_edit": can_edit,  # 新增：是否可编辑
             "created_at": item.created_at,
             "updated_at": item.updated_at
         }

@@ -154,6 +154,7 @@ class KnowledgeResponse(BaseModel):
     is_public: bool = True  # 新增：是否公开
     username: Optional[str] = None  # 新增：归属用户名
     groups: Optional[List[KnowledgeGroupInfo]] = []  # 新增：所属分组列表
+    can_edit: bool = False  # 新增：当前用户是否可编辑
     created_at: datetime
     updated_at: datetime
 
