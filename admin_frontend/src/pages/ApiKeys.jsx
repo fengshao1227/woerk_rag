@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, message, Popconfirm, Space, Tag, Tooltip, Switch, DatePicker, Typography, Card, Spin } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined, CodeOutlined } from '@ant-design/icons';
 import { apiKeysAPI } from '../services/api';
 import useResponsive from '../hooks/useResponsive';
 import dayjs from 'dayjs';
@@ -76,6 +76,13 @@ export default function ApiKeys() {
   const handleCopy = (key) => {
     navigator.clipboard.writeText(key);
     message.success('已复制到剪贴板');
+  };
+
+  // 生成 claude mcp add 命令并复制
+  const handleCopyInstallCommand = (record) => {
+    const command = `claude mcp add rag-knowledge -s user --transport stdio -e RAG_API_KEY=${record.key} -- uvx --from git+https://github.com/fengshao1227/woerk_rag.git rag-mcp`;
+    navigator.clipboard.writeText(command);
+    message.success('安装命令已复制，请在终端粘贴执行');
   };
 
   const columns = [
@@ -161,9 +168,12 @@ export default function ApiKeys() {
     {
       title: '操作',
       key: 'action',
-      width: 150,
+      width: 180,
       render: (_, record) => (
-        <Space>
+        <Space size={4}>
+          <Tooltip title="复制安装命令">
+            <Button icon={<CodeOutlined />} size="small" onClick={() => handleCopyInstallCommand(record)} />
+          </Tooltip>
           <Tooltip title="编辑">
             <Button icon={<EditOutlined />} size="small" onClick={() => handleEdit(record)} />
           </Tooltip>
@@ -223,6 +233,7 @@ export default function ApiKeys() {
             </Space>
           </div>
           <Space direction="vertical" size={4}>
+            <Button size="small" icon={<CodeOutlined />} onClick={() => handleCopyInstallCommand(record)}>安装</Button>
             <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
             <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
               <Button size="small" danger icon={<DeleteOutlined />} />

@@ -335,9 +335,7 @@ export const apiKeysAPI = {
 export const myApiKeysAPI = {
   list: () => api.get('/my-api-keys'),
   create: (data) => api.post('/my-api-keys', data),
-  delete: (id) => api.delete(`/my-api-keys/${id}`),
-  // 下载 MCP 服务器压缩包
-  downloadUrl: (id) => `${api.defaults.baseURL}/my-api-keys/${id}/download`
+  delete: (id) => api.delete(`/my-api-keys/${id}`)
 };
 
 export { ragApi, TokenManager };
