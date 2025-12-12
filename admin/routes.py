@@ -781,9 +781,30 @@ async def list_knowledge(
         .limit(page_size) \
         .all()
 
-    # 构建响应，添加 username 字段
+    # 构建响应，添加 username 字段和 groups 字段
+    # 批量获取所有知识的分组信息
+    item_qdrant_ids = [item.qdrant_id for item in items if item.qdrant_id]
+    qdrant_to_groups = {}
+    if item_qdrant_ids:
+        group_items = db.query(KnowledgeGroupItem).filter(
+            KnowledgeGroupItem.qdrant_id.in_(item_qdrant_ids)
+        ).all()
+        group_ids = list(set([gi.group_id for gi in group_items]))
+        groups_map = {}
+        if group_ids:
+            groups = db.query(KnowledgeGroup).filter(KnowledgeGroup.id.in_(group_ids)).all()
+            for g in groups:
+                groups_map[g.id] = {"id": g.id, "name": g.name, "is_public": g.is_public}
+        for gi in group_items:
+            if gi.qdrant_id not in qdrant_to_groups:
+                qdrant_to_groups[gi.qdrant_id] = []
+            if gi.group_id in groups_map:
+                qdrant_to_groups[gi.qdrant_id].append(groups_map[gi.group_id])
+
     knowledge_items = []
     for item in items:
+        # 获取该知识所属的分组列表
+        item_groups = qdrant_to_groups.get(item.qdrant_id, [])
         item_dict = {
             "id": item.id,
             "qdrant_id": item.qdrant_id,
@@ -796,6 +817,7 @@ async def list_knowledge(
             "user_id": item.user_id,
             "is_public": item.is_public if item.is_public is not None else True,
             "username": item.user.username if item.user else None,
+            "groups": item_groups,  # 新增：分组列表
             "created_at": item.created_at,
             "updated_at": item.updated_at
         }

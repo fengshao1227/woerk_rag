@@ -134,6 +134,13 @@ class KnowledgeUpdate(BaseModel):
     is_public: Optional[bool] = None  # 新增：可见性
 
 
+class KnowledgeGroupInfo(BaseModel):
+    """知识所属分组简要信息"""
+    id: int
+    name: str
+    is_public: bool
+
+
 class KnowledgeResponse(BaseModel):
     id: int
     qdrant_id: str
@@ -146,6 +153,7 @@ class KnowledgeResponse(BaseModel):
     user_id: Optional[int] = None  # 新增：归属用户ID
     is_public: bool = True  # 新增：是否公开
     username: Optional[str] = None  # 新增：归属用户名
+    groups: Optional[List[KnowledgeGroupInfo]] = []  # 新增：所属分组列表
     created_at: datetime
     updated_at: datetime
 

@@ -126,16 +126,31 @@ export default function Knowledge() {
     { title: '标题', dataIndex: 'title', ellipsis: true },
     { title: '分类', dataIndex: 'category', render: v => <Tag>{v}</Tag> },
     {
-      title: '可见性',
-      dataIndex: 'is_public',
-      width: 80,
-      render: (is_public) => (
-        is_public ? (
-          <Tag color="green" icon={<GlobalOutlined />}>公开</Tag>
-        ) : (
-          <Tag color="blue" icon={<LockOutlined />}>私有</Tag>
-        )
-      )
+      title: '所属分组',
+      dataIndex: 'groups',
+      width: 150,
+      render: (groupList) => {
+        if (!groupList || groupList.length === 0) {
+          return <Tag color="default">未分组</Tag>;
+        }
+        // 显示前2个分组，多余的用 +N 表示
+        const displayGroups = groupList.slice(0, 2);
+        const extraCount = groupList.length - 2;
+        return (
+          <Space size={2} wrap>
+            {displayGroups.map(g => (
+              <Tag
+                key={g.id}
+                color={g.is_public ? 'green' : 'blue'}
+                icon={g.is_public ? <GlobalOutlined /> : <LockOutlined />}
+              >
+                {g.name}
+              </Tag>
+            ))}
+            {extraCount > 0 && <Tag>+{extraCount}</Tag>}
+          </Space>
+        );
+      }
     },
     { title: '归属', dataIndex: 'username', width: 80, render: v => v || 'admin' },
     { title: '摘要', dataIndex: 'summary', ellipsis: true },
