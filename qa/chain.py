@@ -329,6 +329,7 @@ class QAChatChain:
         top_k: int = 5,
         filters: Dict = None,
         group_ids: List[int] = None,
+        user_id: int = None,
         use_history: bool = True,
         use_reranker: bool = None
     ) -> Generator[Dict, None, None]:
@@ -340,6 +341,7 @@ class QAChatChain:
             top_k: 检索结果数量
             filters: 过滤条件
             group_ids: 知识分组ID列表，只在指定分组中检索
+            user_id: 用户ID，用于权限过滤
             use_history: 是否使用对话历史
             use_reranker: 是否使用 Reranker
 
@@ -367,12 +369,13 @@ class QAChatChain:
                 return
 
         # 检索相关文档
-        logger.info(f"流式检索问题: {question}" + (f"，分组过滤: {group_ids}" if group_ids else ""))
+        logger.info(f"流式检索问题: {question}" + (f"，分组过滤: {group_ids}" if group_ids else "") + (f"，用户: {user_id}" if user_id else ""))
         results = self.retriever.search(
             question,
             top_k=top_k,
             filters=filters,
             group_ids=group_ids,
+            user_id=user_id,
             use_reranker=use_reranker
         )
 

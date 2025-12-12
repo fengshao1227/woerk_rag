@@ -328,6 +328,7 @@ async def query_stream(request: QueryRequest, current_user = Depends(get_current
                 top_k=request.top_k,
                 filters=request.filters,
                 group_ids=effective_group_ids,
+                user_id=current_user.id,
                 use_history=request.use_history
             ):
                 # 收集回答内容

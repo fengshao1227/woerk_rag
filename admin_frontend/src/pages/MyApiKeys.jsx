@@ -133,10 +133,26 @@ export default function MyApiKeys() {
   };
 
   // 生成 claude mcp add 命令并复制
-  const handleCopyInstallCommand = (record) => {
+  const handleCopyInstallCommand = async (record) => {
     const command = `claude mcp add rag-knowledge -s user --transport stdio -e RAG_API_KEY=${record.key} -- uvx --from git+https://github.com/fengshao1227/woerk_rag.git rag-mcp`;
-    navigator.clipboard.writeText(command);
-    message.success('安装命令已复制，请在终端粘贴执行');
+    try {
+      await navigator.clipboard.writeText(command);
+      message.success('安装命令已复制，请在终端粘贴执行');
+    } catch (err) {
+      // fallback: 创建临时文本框复制
+      const textArea = document.createElement('textarea');
+      textArea.value = command;
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        message.success('安装命令已复制，请在终端粘贴执行');
+      } catch (e) {
+        message.error('复制失败，请手动复制');
+        console.error('Copy failed:', e);
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
   const columns = [
@@ -399,9 +415,23 @@ export default function MyApiKeys() {
         open={rulesModalOpen}
         onCancel={() => setRulesModalOpen(false)}
         footer={[
-          <Button key="copy" icon={<CopyOutlined />} onClick={() => {
-            navigator.clipboard.writeText(RAG_USAGE_RULES);
-            message.success('规则已复制到剪贴板');
+          <Button key="copy" icon={<CopyOutlined />} onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(RAG_USAGE_RULES);
+              message.success('规则已复制到剪贴板');
+            } catch (err) {
+              const textArea = document.createElement('textarea');
+              textArea.value = RAG_USAGE_RULES;
+              document.body.appendChild(textArea);
+              textArea.select();
+              try {
+                document.execCommand('copy');
+                message.success('规则已复制到剪贴板');
+              } catch (e) {
+                message.error('复制失败，请手动复制');
+              }
+              document.body.removeChild(textArea);
+            }
           }}>
             复制规则
           </Button>,

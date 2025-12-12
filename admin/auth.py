@@ -134,17 +134,23 @@ async def get_current_user(
                 bound_user = db.query(User).filter(User.id == key_record.user_id).first()
                 if bound_user and bound_user.is_active:
                     return bound_user
-                # 用户不存在或已禁用，降级为管理员权限
+                # 用户不存在或已禁用
+                logger.warning(f"卡密 {key_record.name} 绑定的用户已失效(user_id={key_record.user_id})，拒绝访问")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="卡密绑定的用户已禁用或不存在"
+                )
             # 未绑定用户的卡密（旧卡密），返回管理员用户以保持向后兼容
+            # 警告：这是临时兼容方案，旧卡密应尽快绑定到具体用户
+            logger.warning(f"旧卡密 {key_record.name} 未绑定用户，使用管理员权限（安全风险）")
             admin_user = db.query(User).filter(User.role == "admin").first()
             if admin_user:
                 return admin_user
-            # 如果没有管理员用户，创建一个临时对象（不保存到数据库）
-            return User(
-                id=0,
-                username=f"mcp:{key_record.name}",
-                role="admin",
-                is_active=True
+            # 如果没有管理员用户，拒绝访问（不再创建临时管理员）
+            logger.error("系统中没有管理员用户，无法处理旧卡密")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="系统配置错误"
             )
         else:
             raise HTTPException(
