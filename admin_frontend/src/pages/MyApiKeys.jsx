@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, message, Popconfirm, Space, Tag, Tooltip, DatePicker, Typography, Card, Spin, Alert } from 'antd';
-import { PlusOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, DownloadOutlined } from '@ant-design/icons';
 import { myApiKeysAPI } from '../services/api';
 import useResponsive from '../hooks/useResponsive';
 import dayjs from 'dayjs';
@@ -58,6 +58,36 @@ export default function MyApiKeys() {
   const handleCopy = (key) => {
     navigator.clipboard.writeText(key);
     message.success('已复制到剪贴板');
+  };
+
+  const handleDownload = (record) => {
+    // 获取 token 用于认证
+    const token = localStorage.getItem('token');
+    if (!token) {
+      message.error('请先登录');
+      return;
+    }
+    // 使用 fetch 下载文件（需要带认证头）
+    const url = myApiKeysAPI.downloadUrl(record.id);
+    fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(response => {
+        if (!response.ok) throw new Error('下载失败');
+        return response.blob();
+      })
+      .then(blob => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        const safeName = record.name.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_').slice(0, 20);
+        link.download = `rag_mcp_server_${safeName}.zip`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+        message.success('MCP 服务器下载成功');
+      })
+      .catch(err => {
+        message.error(err.message || '下载失败');
+      });
   };
 
   const columns = [
@@ -134,16 +164,21 @@ export default function MyApiKeys() {
     {
       title: '操作',
       key: 'action',
-      width: 100,
+      width: 140,
       render: (_, record) => (
-        <Popconfirm
-          title="确定要删除这个卡密吗？"
-          onConfirm={() => handleDelete(record.id)}
-        >
-          <Tooltip title="删除">
-            <Button icon={<DeleteOutlined />} size="small" danger />
+        <Space size={4}>
+          <Tooltip title="下载 MCP 服务器">
+            <Button icon={<DownloadOutlined />} size="small" onClick={() => handleDownload(record)} />
           </Tooltip>
-        </Popconfirm>
+          <Popconfirm
+            title="确定要删除这个卡密吗？"
+            onConfirm={() => handleDelete(record.id)}
+          >
+            <Tooltip title="删除">
+              <Button icon={<DeleteOutlined />} size="small" danger />
+            </Tooltip>
+          </Popconfirm>
+        </Space>
       )
     }
   ];
@@ -186,9 +221,12 @@ export default function MyApiKeys() {
               <Tag color="purple">{record.usage_count} 次</Tag>
             </Space>
           </div>
-          <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
+          <Space direction="vertical" size={4}>
+            <Button size="small" icon={<DownloadOutlined />} onClick={() => handleDownload(record)}>下载</Button>
+            <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
+              <Button size="small" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          </Space>
         </div>
       </Card>
     );
