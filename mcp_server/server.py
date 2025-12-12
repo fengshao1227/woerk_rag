@@ -42,7 +42,8 @@ HTTP 模式（多会话，需先启动服务）:
 import httpx
 import os
 import sys
-from typing import Optional
+import time
+from typing import Optional, List
 from mcp.server.fastmcp import FastMCP
 
 # 远程 RAG API 地址
@@ -58,6 +59,13 @@ MCP_PASSWORD = os.environ.get("RAG_MCP_PASSWORD", "")
 # MCP Server 配置
 MCP_HOST = os.environ.get("MCP_HOST", "127.0.0.1")
 MCP_PORT = int(os.environ.get("MCP_PORT", "8766"))
+
+# 搜索结果相似度阈值（低于此值的结果会被标注为低相关）
+SEARCH_SCORE_THRESHOLD = float(os.environ.get("SEARCH_SCORE_THRESHOLD", "0.4"))
+
+# 知识添加任务轮询配置
+ADD_KNOWLEDGE_POLL_INTERVAL = 2.0  # 轮询间隔（秒）
+ADD_KNOWLEDGE_MAX_WAIT = 120  # 最大等待时间（秒）
 
 # 初始化 MCP Server
 mcp = FastMCP("RAG Knowledge Base")
@@ -139,15 +147,18 @@ def get_auth_headers() -> dict:
 @mcp.tool()
 def query(question: str, top_k: int = 5, group_names: Optional[str] = None) -> str:
     """
-    RAG 问答:基于知识库回答问题
+    RAG 智能问答 - 基于知识库生成详细回答
+
+    根据问题检索相关知识，由 AI 生成综合性回答并标注来源。
+    适用于需要详细解答的复杂问题。
 
     Args:
-        question: 要询问的问题
-        top_k: 检索的相关文档数量,默认5
-        group_names: 可选的分组名称,多个用逗号分隔,如"fm,项目A",限定在指定分组中检索
+        question: 要询问的问题（支持自然语言）
+        top_k: 检索的相关文档数量，默认5，增大可获取更多上下文
+        group_names: 限定检索范围，多个分组用逗号分隔，如 "fm,项目A"
 
     Returns:
-        包含答案和来源的回复
+        包含 AI 回答和参考来源的完整响应
     """
     try:
         headers = get_auth_headers()
@@ -178,22 +189,39 @@ def query(question: str, top_k: int = 5, group_names: Optional[str] = None) -> s
 
         return output
 
+    except httpx.ConnectError:
+        return "## 连接失败\n\n无法连接到知识库服务，请检查网络或服务状态。"
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            return "## 认证失败\n\n请检查 API Key 配置是否正确。"
+        elif e.response.status_code == 403:
+            return "## 权限不足\n\n当前 API Key 没有访问该资源的权限。"
+        return f"## 请求失败\n\nHTTP {e.response.status_code}: {str(e)}"
     except Exception as e:
         return f"## 错误\n\n调用 RAG API 失败: {str(e)}"
 
 
 @mcp.tool()
-def search(query_text: str, top_k: int = 5, group_names: Optional[str] = None) -> str:
+def search(
+    query_text: str,
+    top_k: int = 5,
+    group_names: Optional[str] = None,
+    min_score: Optional[float] = None
+) -> str:
     """
-    向量检索:搜索知识库中的相关内容
+    语义搜索 - 快速查找知识库中的相关内容
+
+    基于向量相似度匹配，返回最相关的知识条目及相似度分数。
+    不调用 AI 生成回答，速度更快。
 
     Args:
-        query_text: 搜索查询文本
-        top_k: 返回结果数量,默认5
-        group_names: 可选的分组名称,多个用逗号分隔,如"fm,项目A",限定在指定分组中检索
+        query_text: 搜索关键词或问题（支持自然语言）
+        top_k: 返回结果数量，默认5
+        group_names: 限定搜索范围，多个分组用逗号分隔，如 "fm,项目A"
+        min_score: 最低相似度阈值（0-1），低于此值的结果不返回
 
     Returns:
-        匹配的知识条目列表
+        匹配的知识条目列表，包含相似度分数和内容预览
     """
     try:
         headers = get_auth_headers()
@@ -211,43 +239,80 @@ def search(query_text: str, top_k: int = 5, group_names: Optional[str] = None) -
             data = response.json()
             results = data.get("results", [])
 
-        if not results:
-            return "未找到相关内容"
+        # 应用相似度阈值过滤
+        score_threshold = min_score if min_score is not None else 0.0
+        filtered_results = [r for r in results if r.get("score", 0) >= score_threshold]
+        low_relevance_count = len(results) - len(filtered_results)
 
-        output = f"## 搜索结果（共 {len(results)} 条）\n\n"
+        if not filtered_results:
+            if low_relevance_count > 0:
+                return f"## 未找到高相关内容\n\n有 {low_relevance_count} 条结果相似度低于 {score_threshold:.2f}，已被过滤。\n\n建议尝试其他关键词或降低 min_score 阈值。"
+            return "## 未找到相关内容\n\n知识库中没有匹配的内容，建议尝试其他关键词。"
 
-        for i, item in enumerate(results, 1):
+        output = f"## 搜索结果（共 {len(filtered_results)} 条）\n\n"
+
+        for i, item in enumerate(filtered_results, 1):
             content = item.get("content", "")
             file_path = item.get("file_path", "未知")
             score = item.get("score", 0)
             title = item.get("title", "")
+            category = item.get("category", "")
 
             preview = content[:300] + "..." if len(content) > 300 else content
 
+            # 相似度标注
+            if score >= 0.7:
+                score_label = "🟢 高相关"
+            elif score >= 0.5:
+                score_label = "🟡 中等相关"
+            elif score >= SEARCH_SCORE_THRESHOLD:
+                score_label = "🟠 低相关"
+            else:
+                score_label = "⚪ 边缘相关"
+
             output += f"### {i}. {title or file_path}\n"
+            if category:
+                output += f"- **分类**: {category}\n"
             output += f"- **来源**: `{file_path}`\n"
-            output += f"- **相似度**: {score:.3f}\n"
+            output += f"- **相似度**: {score:.3f} ({score_label})\n"
             output += f"- **内容预览**:\n```\n{preview}\n```\n\n"
+
+        if low_relevance_count > 0:
+            output += f"\n> 💡 另有 {low_relevance_count} 条低相关结果未显示"
 
         return output
 
+    except httpx.ConnectError:
+        return "## 连接失败\n\n无法连接到知识库服务，请检查网络或服务状态。"
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            return "## 认证失败\n\n请检查 API Key 配置是否正确。"
+        return f"## 请求失败\n\nHTTP {e.response.status_code}: {str(e)}"
     except Exception as e:
         return f"## 错误\n\n调用 RAG API 失败: {str(e)}"
 
 
 @mcp.tool()
-def add_knowledge(content: str, title: Optional[str] = None, category: str = "general", group_names: Optional[str] = None) -> str:
+def add_knowledge(
+    content: str,
+    title: Optional[str] = None,
+    category: str = "general",
+    group_names: Optional[str] = None
+) -> str:
     """
-    添加知识:将新知识添加到知识库,AI 会自动提取关键信息
+    添加知识 - 将新内容存入知识库
+
+    AI 会自动提取标题、摘要、关键词和技术栈。
+    支持项目经历、技术笔记、学习心得等各类内容。
 
     Args:
-        content: 知识内容（项目经历、技术笔记、学习心得等）
-        title: 可选的标题,不提供则由 AI 自动生成
-        category: 分类,可选值:project（项目）、skill（技能）、experience（经历）、note（笔记）、general（通用）
-        group_names: 可选的分组名称,多个用逗号分隔,如"fm,项目A"
+        content: 知识内容（至少10个字符）
+        title: 可选标题，不提供则由 AI 自动生成
+        category: 分类 - project(项目)/skill(技能)/experience(经历)/note(笔记)/general(通用)
+        group_names: 添加到指定分组，多个用逗号分隔，如 "fm,项目A"
 
     Returns:
-        添加结果和提取的关键信息
+        添加结果，包含 AI 提取的标题、摘要、关键词等信息
     """
     try:
         headers = get_auth_headers()
@@ -255,6 +320,7 @@ def add_knowledge(content: str, title: Optional[str] = None, category: str = "ge
         # 解析分组名称
         groups = [g.strip() for g in group_names.split(",")] if group_names else None
 
+        # Step 1: 提交添加任务
         with httpx.Client(timeout=60.0) as client:
             response = client.post(
                 f"{RAG_API_BASE}/add_knowledge",
@@ -269,20 +335,270 @@ def add_knowledge(content: str, title: Optional[str] = None, category: str = "ge
             response.raise_for_status()
             result = response.json()
 
-        output = "## 知识添加成功\n\n"
-        output += f"**标题**: {result.get('title', '未命名')}\n\n"
-        output += f"**摘要**: {result.get('summary', '')}\n\n"
-        output += f"**关键词**: {', '.join(result.get('keywords', []))}\n\n"
-        output += f"**技术栈**: {', '.join(result.get('tech_stack', []))}\n\n"
-        output += f"**分类**: {result.get('category', category)}\n\n"
-        if groups:
-            output += f"**已添加到分组**: {', '.join(groups)}\n\n"
-        output += f"**ID**: `{result.get('id', 'unknown')}`\n"
+        task_id = result.get("task_id")
+        if not task_id:
+            # 旧版 API 直接返回结果（兼容）
+            return _format_add_result(result, category, groups)
+
+        # Step 2: 轮询任务状态直到完成
+        start_time = time.time()
+        while time.time() - start_time < ADD_KNOWLEDGE_MAX_WAIT:
+            time.sleep(ADD_KNOWLEDGE_POLL_INTERVAL)
+
+            with httpx.Client(timeout=30.0) as client:
+                status_response = client.get(
+                    f"{RAG_API_BASE}/add_knowledge/status/{task_id}",
+                    headers=headers
+                )
+                status_response.raise_for_status()
+                status_data = status_response.json()
+
+            status = status_data.get("status", "")
+
+            if status == "completed":
+                # 任务完成，获取知识条目详情
+                result_id = status_data.get("result_id")
+                if result_id:
+                    return _get_knowledge_detail(result_id, category, groups, headers)
+                return "## 知识添加成功\n\n内容已成功存入知识库。"
+
+            elif status == "failed":
+                error_msg = status_data.get("message", "未知错误")
+                return f"## 添加失败\n\n{error_msg}"
+
+            elif status == "processing":
+                continue  # 继续轮询
+
+            elif status == "pending":
+                continue  # 任务排队中
+
+        return "## 处理超时\n\n任务仍在处理中，请稍后使用 search 工具查看是否添加成功。"
+
+    except httpx.ConnectError:
+        return "## 连接失败\n\n无法连接到知识库服务，请检查网络或服务状态。"
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 400:
+            return "## 参数错误\n\n内容不能为空或过短（至少需要10个字符）。"
+        elif e.response.status_code == 401:
+            return "## 认证失败\n\n请检查 API Key 配置是否正确。"
+        return f"## 请求失败\n\nHTTP {e.response.status_code}: {str(e)}"
+    except Exception as e:
+        return f"## 错误\n\n添加知识失败: {str(e)}"
+
+
+def _get_knowledge_detail(
+    qdrant_id: str,
+    category: str,
+    groups: Optional[List[str]],
+    headers: dict
+) -> str:
+    """获取知识条目详情"""
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(
+                f"{RAG_API_BASE}/admin/api/knowledge/{qdrant_id}",
+                headers=headers
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return _format_add_result(data, category, groups)
+    except Exception:
+        pass
+
+    # 如果获取详情失败，返回简化信息
+    output = "## 知识添加成功\n\n"
+    output += f"**ID**: `{qdrant_id}`\n\n"
+    if groups:
+        output += f"**已添加到分组**: {', '.join(groups)}\n\n"
+    output += "> 使用 `search` 工具搜索刚添加的内容查看详情"
+    return output
+
+
+def _format_add_result(
+    result: dict,
+    category: str,
+    groups: Optional[List[str]]
+) -> str:
+    """格式化添加结果输出"""
+    output = "## 知识添加成功\n\n"
+
+    title = result.get("title", "")
+    if title and title != "未命名" and title != "未命名知识":
+        output += f"**标题**: {title}\n\n"
+    else:
+        output += "**标题**: （AI 自动生成中...）\n\n"
+
+    summary = result.get("summary", "")
+    if summary:
+        output += f"**摘要**: {summary}\n\n"
+
+    keywords = result.get("keywords", [])
+    if keywords:
+        output += f"**关键词**: {', '.join(keywords)}\n\n"
+
+    tech_stack = result.get("tech_stack", [])
+    if tech_stack:
+        output += f"**技术栈**: {', '.join(tech_stack)}\n\n"
+
+    result_category = result.get("category", category)
+    output += f"**分类**: {result_category}\n\n"
+
+    if groups:
+        output += f"**已添加到分组**: {', '.join(groups)}\n\n"
+
+    qdrant_id = result.get("qdrant_id") or result.get("id") or result.get("result_id")
+    if qdrant_id and qdrant_id != "unknown":
+        output += f"**ID**: `{qdrant_id}`\n"
+    else:
+        output += "**ID**: （处理中）\n"
+
+    return output
+
+
+@mcp.tool()
+def delete_knowledge(qdrant_id: str) -> str:
+    """
+    删除知识 - 从知识库中移除指定条目
+
+    Args:
+        qdrant_id: 知识条目 ID（可通过 search 工具获取）
+
+    Returns:
+        删除结果确认
+    """
+    try:
+        headers = get_auth_headers()
+
+        with httpx.Client(timeout=30.0) as client:
+            response = client.delete(
+                f"{RAG_API_BASE}/admin/api/knowledge/{qdrant_id}",
+                headers=headers
+            )
+
+            if response.status_code == 200:
+                return f"## 删除成功\n\n已删除知识条目 `{qdrant_id}`"
+            elif response.status_code == 404:
+                return f"## 未找到\n\n知识条目 `{qdrant_id}` 不存在"
+            else:
+                response.raise_for_status()
+
+    except httpx.ConnectError:
+        return "## 连接失败\n\n无法连接到知识库服务。"
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            return "## 认证失败\n\n请检查 API Key 配置是否正确。"
+        elif e.response.status_code == 403:
+            return "## 权限不足\n\n当前用户没有删除权限。"
+        return f"## 请求失败\n\nHTTP {e.response.status_code}"
+    except Exception as e:
+        return f"## 错误\n\n删除失败: {str(e)}"
+
+
+@mcp.tool()
+def list_groups() -> str:
+    """
+    列出分组 - 查看知识库中所有可用的分组
+
+    Returns:
+        分组列表，包含名称、描述和条目数量
+    """
+    try:
+        headers = get_auth_headers()
+
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(
+                f"{RAG_API_BASE}/admin/api/groups",
+                headers=headers
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        groups = data.get("groups", data) if isinstance(data, dict) else data
+
+        if not groups:
+            return "## 暂无分组\n\n知识库中尚未创建任何分组。"
+
+        output = f"## 知识库分组（共 {len(groups)} 个）\n\n"
+
+        for group in groups:
+            name = group.get("name", "未命名")
+            description = group.get("description", "")
+            count = group.get("item_count", group.get("count", 0))
+
+            output += f"### {name}\n"
+            if description:
+                output += f"- **描述**: {description}\n"
+            output += f"- **条目数**: {count}\n\n"
 
         return output
 
+    except httpx.ConnectError:
+        return "## 连接失败\n\n无法连接到知识库服务。"
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            return "## 认证失败\n\n请检查 API Key 配置是否正确。"
+        return f"## 请求失败\n\nHTTP {e.response.status_code}"
     except Exception as e:
-        return f"## 错误\n\n添加知识失败: {str(e)}"
+        return f"## 错误\n\n获取分组列表失败: {str(e)}"
+
+
+@mcp.tool()
+def stats() -> str:
+    """
+    统计信息 - 查看知识库整体统计数据
+
+    Returns:
+        知识库总条目数、分组统计、分类分布等信息
+    """
+    try:
+        headers = get_auth_headers()
+
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(
+                f"{RAG_API_BASE}/admin/api/stats",
+                headers=headers
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        output = "## 知识库统计\n\n"
+
+        # 总条目数
+        total = data.get("total_knowledge", data.get("knowledge_count", 0))
+        output += f"**总条目数**: {total}\n\n"
+
+        # 分组数
+        group_count = data.get("total_groups", data.get("group_count", 0))
+        output += f"**分组数**: {group_count}\n\n"
+
+        # 分类分布
+        categories = data.get("categories", data.get("category_stats", {}))
+        if categories:
+            output += "**分类分布**:\n"
+            for cat, count in categories.items():
+                output += f"- {cat}: {count}\n"
+            output += "\n"
+
+        # 用户数（如果有）
+        user_count = data.get("total_users", data.get("user_count"))
+        if user_count:
+            output += f"**用户数**: {user_count}\n\n"
+
+        # 模型数（如果有）
+        model_count = data.get("total_models", data.get("model_count"))
+        if model_count:
+            output += f"**LLM 模型数**: {model_count}\n"
+
+        return output
+
+    except httpx.ConnectError:
+        return "## 连接失败\n\n无法连接到知识库服务。"
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            return "## 认证失败\n\n请检查 API Key 配置是否正确。"
+        return f"## 请求失败\n\nHTTP {e.response.status_code}"
+    except Exception as e:
+        return f"## 错误\n\n获取统计信息失败: {str(e)}"
 
 
 def main():
