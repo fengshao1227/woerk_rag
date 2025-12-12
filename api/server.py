@@ -405,20 +405,35 @@ async def search(request: SearchRequest, http_request: Request, current_user = D
         if results:
             db = SessionLocal()
             try:
-                # 收集所有 qdrant_id
+                # 收集所有 qdrant_id，标准化格式（移除横杠）
+                def normalize_id(id_str):
+                    """将 UUID 格式转为纯 hex 格式"""
+                    if id_str:
+                        return id_str.replace("-", "").lower()
+                    return id_str
+
                 qdrant_ids = [r.get("id") for r in results if r.get("id")]
-                if qdrant_ids:
+                # 同时查询带横杠和不带横杠的格式
+                normalized_ids = [normalize_id(id_str) for id_str in qdrant_ids]
+                all_ids = set(qdrant_ids + normalized_ids)
+
+                if all_ids:
                     # 批量查询 MySQL
                     entries = db.query(KnowledgeEntry).filter(
-                        KnowledgeEntry.qdrant_id.in_(qdrant_ids)
+                        KnowledgeEntry.qdrant_id.in_(all_ids)
                     ).all()
-                    # 构建映射
-                    entry_map = {e.qdrant_id: e for e in entries}
+                    # 构建映射（同时支持两种格式）
+                    entry_map = {}
+                    for e in entries:
+                        entry_map[e.qdrant_id] = e
+                        entry_map[normalize_id(e.qdrant_id)] = e
+
                     # 补充信息
                     for result in results:
                         qdrant_id = result.get("id")
-                        if qdrant_id and qdrant_id in entry_map:
-                            entry = entry_map[qdrant_id]
+                        normalized_qdrant_id = normalize_id(qdrant_id)
+                        entry = entry_map.get(qdrant_id) or entry_map.get(normalized_qdrant_id)
+                        if entry:
                             result["title"] = entry.title
                             result["category"] = entry.category
                             result["summary"] = entry.summary
