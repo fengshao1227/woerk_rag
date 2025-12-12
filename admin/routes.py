@@ -1768,6 +1768,8 @@ async def list_groups(
         icon="inbox",
         is_active=True,
         is_default=True,
+        is_public=True,
+        user_id=None,
         items_count=ungrouped_count,
         created_at=now,
         updated_at=now
@@ -1784,6 +1786,8 @@ async def list_groups(
             icon=g.icon,
             is_active=g.is_active,
             is_default=False,
+            is_public=g.is_public,
+            user_id=g.user_id,
             items_count=items_count,
             created_at=g.created_at,
             updated_at=g.updated_at
@@ -1799,7 +1803,7 @@ async def create_group(
     db: Session = Depends(get_db)
 ):
     """创建知识分组"""
-    group = KnowledgeGroup(**data.model_dump())
+    group = KnowledgeGroup(**data.model_dump(), user_id=current_user.id)
     db.add(group)
     db.commit()
     db.refresh(group)
@@ -1811,6 +1815,8 @@ async def create_group(
         color=group.color,
         icon=group.icon,
         is_active=group.is_active,
+        is_public=group.is_public,
+        user_id=group.user_id,
         items_count=0,
         created_at=group.created_at,
         updated_at=group.updated_at
@@ -1837,6 +1843,8 @@ async def get_group(
         color=group.color,
         icon=group.icon,
         is_active=group.is_active,
+        is_public=group.is_public,
+        user_id=group.user_id,
         items_count=items_count,
         created_at=group.created_at,
         updated_at=group.updated_at
@@ -1871,6 +1879,8 @@ async def update_group(
         color=group.color,
         icon=group.icon,
         is_active=group.is_active,
+        is_public=group.is_public,
+        user_id=group.user_id,
         items_count=items_count,
         created_at=group.created_at,
         updated_at=group.updated_at
