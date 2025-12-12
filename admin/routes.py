@@ -677,43 +677,77 @@ async def list_knowledge(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取知识条目列表，支持按分组筛选和用户权限过滤"""
-    from sqlalchemy import or_
+    """获取知识条目列表，支持按分组筛选和用户权限过滤
+
+    权限规则（知识可见性由分组决定）：
+    1. 管理员可看全部
+    2. 普通用户可看：
+       - 自己创建的分组中的知识
+       - 公开分组中的知识
+       - 共享给自己的分组中的知识
+       - 自己创建的未分组知识
+    """
+    from sqlalchemy import or_, and_
 
     query = db.query(KnowledgeEntry)
 
-    # 用户权限过滤：管理员可看全部，普通用户只看自己的 + 公开的 + 共享分组中的
+    # 用户权限过滤
     if current_user.role != "admin":
-        # 获取共享给当前用户的分组ID
+        # 1. 获取用户自己创建的分组ID
+        my_group_ids = db.query(KnowledgeGroup.id).filter(
+            KnowledgeGroup.user_id == current_user.id
+        ).all()
+        my_group_ids = [g[0] for g in my_group_ids]
+
+        # 2. 获取公开分组ID
+        public_group_ids = db.query(KnowledgeGroup.id).filter(
+            KnowledgeGroup.is_public == True
+        ).all()
+        public_group_ids = [g[0] for g in public_group_ids]
+
+        # 3. 获取共享给当前用户的分组ID
         shared_group_ids = db.query(GroupShare.group_id).filter(
             GroupShare.shared_with_user_id == current_user.id
         ).all()
         shared_group_ids = [g[0] for g in shared_group_ids]
 
-        # 获取共享分组中的 qdrant_id
-        shared_qdrant_ids = []
-        if shared_group_ids:
-            shared_items = db.query(KnowledgeGroupItem.qdrant_id).filter(
-                KnowledgeGroupItem.group_id.in_(shared_group_ids)
-            ).all()
-            shared_qdrant_ids = [item[0] for item in shared_items]
+        # 合并所有可访问的分组ID
+        accessible_group_ids = list(set(my_group_ids + public_group_ids + shared_group_ids))
 
-        # 过滤条件：自己的 OR 公开的 OR 在共享分组中的
-        if shared_qdrant_ids:
+        # 4. 获取这些分组中的知识 qdrant_id
+        accessible_qdrant_ids = []
+        if accessible_group_ids:
+            items = db.query(KnowledgeGroupItem.qdrant_id).filter(
+                KnowledgeGroupItem.group_id.in_(accessible_group_ids)
+            ).all()
+            accessible_qdrant_ids = [item[0] for item in items]
+
+        # 5. 获取所有已分组的 qdrant_id（用于判断未分组知识）
+        all_grouped_qdrant_ids = db.query(KnowledgeGroupItem.qdrant_id).distinct().all()
+        all_grouped_qdrant_ids = [item[0] for item in all_grouped_qdrant_ids]
+
+        # 过滤条件：在可访问分组中 OR (未分组且是自己创建的)
+        if accessible_qdrant_ids:
             query = query.filter(
                 or_(
-                    KnowledgeEntry.user_id == current_user.id,
-                    KnowledgeEntry.is_public == True,
-                    KnowledgeEntry.qdrant_id.in_(shared_qdrant_ids)
+                    KnowledgeEntry.qdrant_id.in_(accessible_qdrant_ids),
+                    and_(
+                        ~KnowledgeEntry.qdrant_id.in_(all_grouped_qdrant_ids) if all_grouped_qdrant_ids else True,
+                        KnowledgeEntry.user_id == current_user.id
+                    )
                 )
             )
         else:
-            query = query.filter(
-                or_(
-                    KnowledgeEntry.user_id == current_user.id,
-                    KnowledgeEntry.is_public == True
+            # 没有可访问分组，只能看自己创建的未分组知识
+            if all_grouped_qdrant_ids:
+                query = query.filter(
+                    and_(
+                        ~KnowledgeEntry.qdrant_id.in_(all_grouped_qdrant_ids),
+                        KnowledgeEntry.user_id == current_user.id
+                    )
                 )
-            )
+            else:
+                query = query.filter(KnowledgeEntry.user_id == current_user.id)
 
     # 分组筛选
     if group_id is not None:
