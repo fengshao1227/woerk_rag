@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, message, Popconfirm, Space, Tag, Tooltip, DatePicker, Typography, Card, Spin, Alert } from 'antd';
-import { PlusOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, CodeOutlined, BookOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, message, Popconfirm, Space, Tag, Tooltip, DatePicker, Typography, Card, Spin, Alert, Segmented } from 'antd';
+import { PlusOutlined, DeleteOutlined, CopyOutlined, KeyOutlined, CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, CodeOutlined, BookOutlined, CloudOutlined, DesktopOutlined } from '@ant-design/icons';
 import { myApiKeysAPI } from '../services/api';
 import useResponsive from '../hooks/useResponsive';
 import dayjs from 'dayjs';
@@ -83,6 +83,9 @@ export default function MyApiKeys() {
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [rulesModalOpen, setRulesModalOpen] = useState(false);
+  const [installModalOpen, setInstallModalOpen] = useState(false);
+  const [installMode, setInstallMode] = useState('remote'); // 'remote' 或 'local'
+  const [selectedKey, setSelectedKey] = useState(null);
   const [form] = Form.useForm();
   const { isMobile } = useResponsive();
 
@@ -132,9 +135,29 @@ export default function MyApiKeys() {
     message.success('已复制到剪贴板');
   };
 
-  // 生成 claude mcp add 命令并复制
-  const handleCopyInstallCommand = async (record) => {
-    const command = `claude mcp add rag-knowledge -s user --transport stdio -e RAG_API_KEY=${record.key} -- uvx --from git+https://github.com/fengshao1227/woerk_rag.git rag-mcp`;
+  // 打开安装命令弹窗
+  const handleShowInstallModal = (record) => {
+    setSelectedKey(record);
+    setInstallModalOpen(true);
+  };
+
+  // 生成远程安装命令（推荐，支持多窗口）
+  const getRemoteInstallCommand = (apiKey) => {
+    return `claude mcp add rag-knowledge -s user -- echo '{"url":"https://rag.litxczv.shop/mcp","headers":{"X-API-Key":"${apiKey}"}}'`;
+  };
+
+  // 生成本地安装命令（需要 Python 环境）
+  const getLocalInstallCommand = (apiKey) => {
+    return `claude mcp add rag-knowledge -s user --transport stdio -e RAG_API_KEY=${apiKey} -- uvx --from git+https://github.com/fengshao1227/woerk_rag.git rag-mcp`;
+  };
+
+  // 复制安装命令
+  const handleCopyInstallCommand = async (mode) => {
+    if (!selectedKey) return;
+    const command = mode === 'remote'
+      ? getRemoteInstallCommand(selectedKey.key)
+      : getLocalInstallCommand(selectedKey.key);
+
     try {
       await navigator.clipboard.writeText(command);
       message.success('安装命令已复制，请在终端粘贴执行');
@@ -232,8 +255,8 @@ export default function MyApiKeys() {
       width: 140,
       render: (_, record) => (
         <Space size={4}>
-          <Tooltip title="复制安装命令">
-            <Button icon={<CodeOutlined />} size="small" onClick={() => handleCopyInstallCommand(record)} />
+          <Tooltip title="安装到 Claude">
+            <Button icon={<CodeOutlined />} size="small" onClick={() => handleShowInstallModal(record)} />
           </Tooltip>
           <Popconfirm
             title="确定要删除这个卡密吗？"
@@ -287,7 +310,7 @@ export default function MyApiKeys() {
             </Space>
           </div>
           <Space direction="vertical" size={4}>
-            <Button size="small" icon={<CodeOutlined />} onClick={() => handleCopyInstallCommand(record)}>安装</Button>
+            <Button size="small" icon={<CodeOutlined />} onClick={() => handleShowInstallModal(record)}>安装</Button>
             <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
               <Button size="small" danger icon={<DeleteOutlined />} />
             </Popconfirm>
@@ -464,6 +487,123 @@ export default function MyApiKeys() {
           style={{ marginTop: 16 }}
           message="使用建议"
           description="将此规则复制到你的项目 CLAUDE.md 或 .cursorrules 文件中，让 AI 助手遵循知识库使用规范。"
+        />
+      </Modal>
+
+      {/* 安装命令弹窗 */}
+      <Modal
+        title={<><CodeOutlined /> 安装到 Claude</>}
+        open={installModalOpen}
+        onCancel={() => {
+          setInstallModalOpen(false);
+          setSelectedKey(null);
+        }}
+        footer={[
+          <Button key="close" onClick={() => setInstallModalOpen(false)}>关闭</Button>,
+          <Button key="copy" type="primary" icon={<CopyOutlined />} onClick={() => handleCopyInstallCommand(installMode)}>
+            复制命令
+          </Button>
+        ]}
+        width={isMobile ? '95vw' : 700}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Text strong>选择安装方式：</Text>
+        </div>
+
+        <Segmented
+          block
+          value={installMode}
+          onChange={setInstallMode}
+          options={[
+            {
+              label: (
+                <div style={{ padding: '8px 0' }}>
+                  <CloudOutlined style={{ marginRight: 8 }} />
+                  远程模式（推荐）
+                </div>
+              ),
+              value: 'remote'
+            },
+            {
+              label: (
+                <div style={{ padding: '8px 0' }}>
+                  <DesktopOutlined style={{ marginRight: 8 }} />
+                  本地模式
+                </div>
+              ),
+              value: 'local'
+            }
+          ]}
+          style={{ marginBottom: 16 }}
+        />
+
+        {installMode === 'remote' ? (
+          <Alert
+            type="success"
+            showIcon
+            icon={<CloudOutlined />}
+            message="远程模式（推荐）"
+            description={
+              <div style={{ fontSize: isMobile ? 12 : 14 }}>
+                <p><Text strong>优点：</Text></p>
+                <ul style={{ paddingLeft: 20, margin: '8px 0' }}>
+                  <li>✅ 支持多窗口多会话并发</li>
+                  <li>✅ 无需本地 Python 环境</li>
+                  <li>✅ 服务端 24/7 在线</li>
+                  <li>✅ 配置简单，一次安装即可</li>
+                </ul>
+              </div>
+            }
+            style={{ marginBottom: 16 }}
+          />
+        ) : (
+          <Alert
+            type="info"
+            showIcon
+            icon={<DesktopOutlined />}
+            message="本地模式"
+            description={
+              <div style={{ fontSize: isMobile ? 12 : 14 }}>
+                <p><Text strong>特点：</Text></p>
+                <ul style={{ paddingLeft: 20, margin: '8px 0' }}>
+                  <li>需要本地安装 <Text code>uv</Text> 和 Python</li>
+                  <li>每次启动 Claude 时本地运行 MCP Server</li>
+                  <li>适合离线使用或自定义需求</li>
+                </ul>
+                <p style={{ marginTop: 8, color: '#666' }}>
+                  先安装 uv：<Text code copyable={{ text: 'curl -LsSf https://astral.sh/uv/install.sh | sh' }}>curl -LsSf https://astral.sh/uv/install.sh | sh</Text>
+                </p>
+              </div>
+            }
+            style={{ marginBottom: 16 }}
+          />
+        )}
+
+        <div style={{ marginTop: 16 }}>
+          <Text strong>安装命令：</Text>
+          <div style={{
+            marginTop: 8,
+            padding: 12,
+            background: '#f5f5f5',
+            borderRadius: 6,
+            fontFamily: 'monospace',
+            fontSize: isMobile ? 11 : 13,
+            wordBreak: 'break-all',
+            lineHeight: 1.6
+          }}>
+            {selectedKey && (installMode === 'remote'
+              ? getRemoteInstallCommand(selectedKey.key)
+              : getLocalInstallCommand(selectedKey.key)
+            )}
+          </div>
+        </div>
+
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginTop: 16 }}
+          message="使用说明"
+          description="复制命令后在终端粘贴执行，然后重启 Claude Desktop 即可使用。"
         />
       </Modal>
     </div>
