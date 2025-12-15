@@ -140,12 +140,12 @@ MYSQL_USER=root
 MYSQL_PASSWORD=your_password
 MYSQL_DATABASE=rag_admin
 
-# 嵌入模型（推荐使用 API 模式）
+# 嵌入模型（推荐使用后台管理配置 Embedding Provider）
 EMBEDDING_PROVIDER=api
 EMBEDDING_API_KEY=your_embedding_api_key
 EMBEDDING_API_BASE=https://api.openai.com
 EMBEDDING_MODEL=text-embedding-3-small
-EMBEDDING_DIM=1536
+# 嵌入维度由模型自动检测
 
 # Reranker（可选，设为 0 禁用）
 RERANKER_ENABLE=0
@@ -514,7 +514,6 @@ docker run -d \
 | `EMBEDDING_API_KEY` | 嵌入 API Key | - |
 | `EMBEDDING_API_BASE` | 嵌入 API 地址 | `https://api.openai.com` |
 | `EMBEDDING_MODEL` | 嵌入模型 | `text-embedding-3-small` |
-| `EMBEDDING_DIM` | 嵌入维度 | `1536` |
 | `RERANKER_ENABLE` | 启用重排 | `0` |
 | `RERANKER_MODEL` | 重排模型 | `BAAI/bge-reranker-base` |
 | `MYSQL_HOST` | MySQL 主机 | `localhost` |

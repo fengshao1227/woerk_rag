@@ -19,7 +19,6 @@ from config import (
     QDRANT_PORT,
     QDRANT_API_KEY,
     QDRANT_COLLECTION_NAME,
-    EMBEDDING_DIM,
 )
 
 
@@ -70,7 +69,7 @@ class VectorIndexOptimizer:
                 "status": info.status.value,
                 "optimizer_status": info.optimizer_status.status.value if info.optimizer_status else "unknown",
                 "config": {
-                    "vector_size": info.config.params.vectors.size if hasattr(info.config.params.vectors, 'size') else EMBEDDING_DIM,
+                    "vector_size": info.config.params.vectors.size if hasattr(info.config.params.vectors, 'size') else None,
                     "distance": info.config.params.vectors.distance.value if hasattr(info.config.params.vectors, 'distance') else "Cosine",
                 },
             }
@@ -204,7 +203,6 @@ class VectorIndexOptimizer:
         Returns:
             预热统计
         """
-        import random
         import numpy as np
 
         logger.info(f"开始预热索引（{sample_queries} 次查询）...")
@@ -218,9 +216,16 @@ class VectorIndexOptimizer:
         }
 
         try:
+            # 从集合配置获取向量维度
+            info = self.get_collection_info()
+            vector_size = info.get("config", {}).get("vector_size")
+            if not vector_size:
+                logger.warning("无法获取向量维度，跳过预热")
+                return stats
+
             for i in range(sample_queries):
                 # 生成随机查询向量
-                query_vector = np.random.rand(EMBEDDING_DIM).tolist()
+                query_vector = np.random.rand(vector_size).tolist()
 
                 start = time.time()
                 self.client.search(

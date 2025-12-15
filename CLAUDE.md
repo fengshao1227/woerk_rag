@@ -171,10 +171,10 @@ QDRANT_PORT=6333
 MYSQL_HOST=localhost
 MYSQL_DATABASE=rag_admin
 
-# Embedding
+# Embedding (推荐使用后台管理配置)
 EMBEDDING_PROVIDER=api|local
 EMBEDDING_MODEL=text-embedding-3-small
-EMBEDDING_DIM=1536
+# 嵌入维度由模型自动检测
 
 # Optional
 RERANKER_ENABLE=0|1

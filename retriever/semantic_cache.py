@@ -16,8 +16,7 @@ from qdrant_client.models import (
 
 from utils.logger import logger
 from config import (
-    QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY,
-    EMBEDDING_DIM
+    QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY
 )
 
 
@@ -70,9 +69,10 @@ class SemanticCache:
         # 如果没有提供 embedding_func，自动创建
         if embedding_func is None:
             from utils.embeddings import EmbeddingModel
-            embedding_model = EmbeddingModel()
-            self.embedding_func = lambda text: embedding_model.embed(text)
+            self._embedding_model = EmbeddingModel()
+            self.embedding_func = lambda text: self._embedding_model.embed(text)
         else:
+            self._embedding_model = None
             self.embedding_func = embedding_func
 
         self.similarity_threshold = similarity_threshold
@@ -117,14 +117,22 @@ class SemanticCache:
         exists = any(c.name == self.COLLECTION_NAME for c in collections)
 
         if not exists:
+            # 动态获取嵌入维度
+            if self._embedding_model is not None:
+                embedding_dim = self._embedding_model.get_embedding_dim()
+            else:
+                # 通过执行一次嵌入来获取维度
+                sample_vector = self.embedding_func("test")
+                embedding_dim = len(sample_vector)
+
             self.client.create_collection(
                 collection_name=self.COLLECTION_NAME,
                 vectors_config=VectorParams(
-                    size=EMBEDDING_DIM,
+                    size=embedding_dim,
                     distance=Distance.COSINE
                 )
             )
-            logger.info(f"创建语义缓存集合: {self.COLLECTION_NAME}")
+            logger.info(f"创建语义缓存集合: {self.COLLECTION_NAME}, 维度: {embedding_dim}")
 
     def _generate_id(self, question: str) -> str:
         """生成缓存 ID"""
