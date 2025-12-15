@@ -1,156 +1,129 @@
-# MCP Server 模块
+# MCP Server Module
 
-**导航**: [← 返回根目录](../CLAUDE.md) / **mcp_server/**
+> [Home](../CLAUDE.md) > MCP Server
 
-> Claude Desktop MCP 集成，提供知识库问答和检索能力
->
-> **最后更新**: 2025-12-08 23:06:35
+## Overview
 
-## 模块概述
+Model Context Protocol server for Claude Desktop integration. Enables Claude to query and manage the knowledge base.
 
-`mcp_server/` 模块实现了 Model Context Protocol (MCP) 服务器，允许 Claude Desktop 直接调用 RAG 知识库的问答和检索功能。
+## Key Files
 
-## 核心文件
+| File | Description |
+|------|-------------|
+| `server.py` | FastMCP server implementation |
 
-| 文件 | 职责 | 关键函数 |
-|------|------|----------|
-| `server.py` | MCP 服务器入口 | `query_knowledge()`, `search_knowledge()` |
-| `__init__.py` | 模块初始化 | - |
+## Running Modes
 
-## MCP 协议简介
+### 1. stdio Mode (Default)
 
-MCP (Model Context Protocol) 是 Anthropic 提供的协议，允许：
-- Claude Desktop 调用外部工具
-- 扩展 Claude 的能力（如访问本地知识库、执行代码等）
-- 实现无缝的工具集成
+For single Claude Desktop session:
 
-## 架构设计
-
-```mermaid
-graph LR
-    A[Claude Desktop] -->|MCP Protocol| B[mcp_server/server.py]
-    B --> C{Tool 调用}
-    C -->|query_knowledge| D[QA Chain]
-    C -->|search_knowledge| E[Vector Store]
-    D --> F[返回 AI 回答]
-    E --> G[返回检索结果]
+```bash
+RAG_API_KEY=rag_sk_xxx python mcp_server/server.py
 ```
 
-## 提供的工具
-
-### 1. query_knowledge
-```python
-功能：基于 RAG 的智能问答
-
-输入参数：
-- question: str (用户问题)
-- top_k: int = 5 (检索条数)
-
-返回：
-- answer: str (AI 回答)
-- sources: List[Dict] (参考来源)
-- retrieved_count: int
-```
-
-**使用场景**: 用户在 Claude Desktop 中询问项目相关问题，自动检索知识库并生成回答。
-
-### 2. search_knowledge
-```python
-功能：向量检索（不调用 LLM）
-
-输入参数：
-- query: str (检索问题)
-- top_k: int = 5
-
-返回：
-- results: List[Dict] (检索结果列表)
-```
-
-**使用场景**: 快速查找相关文档，不需要 AI 生成回答。
-
-## 配置 Claude Desktop
-
-### 1. 安装 MCP Server
-编辑 Claude Desktop 配置文件：
+Claude Desktop config:
 ```json
-// macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
-// Windows: %APPDATA%/Claude/claude_desktop_config.json
 {
   "mcpServers": {
-    "rag": {
+    "rag-knowledge": {
       "command": "python",
-      "args": ["/path/to/rag/mcp_server/server.py"]
+      "args": ["/path/to/rag/mcp_server/server.py"],
+      "env": {
+        "RAG_API_KEY": "rag_sk_your_key"
+      }
     }
   }
 }
 ```
 
-### 2. 重启 Claude Desktop
-配置后重启 Claude Desktop，MCP Server 将自动启动。
+### 2. HTTP Mode (Multi-session)
 
-### 3. 使用工具
-在对话中，Claude 会自动调用 `query_knowledge` 或 `search_knowledge` 工具来回答问题。
+For multiple concurrent Claude sessions:
 
-## 启动与测试
-
-### 手动启动（测试）
 ```bash
-cd /path/to/rag
-python mcp_server/server.py
+RAG_API_KEY=rag_sk_xxx python mcp_server/server.py --http
+# or
+MCP_TRANSPORT=http RAG_API_KEY=rag_sk_xxx python mcp_server/server.py
 ```
 
-### 日志查看
-MCP Server 的日志会输出到标准错误流（stderr）：
+Claude Desktop config:
+```json
+{
+  "mcpServers": {
+    "rag-knowledge": {
+      "url": "http://localhost:8766/sse"
+    }
+  }
+}
+```
+
+## MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `query` | RAG Q&A with optional group filtering |
+| `search` | Vector similarity search |
+| `add_knowledge` | Add knowledge entry (async) |
+| `delete_knowledge` | Remove knowledge entry |
+| `list_groups` | List knowledge groups |
+| `stats` | Get knowledge base statistics |
+
+## Authentication
+
+### API Key (Recommended)
+
+```python
+RAG_API_KEY = os.environ.get("RAG_API_KEY", "")
+```
+
+- Created via Admin Dashboard > MCP API Keys
+- Verified against `/mcp/verify` endpoint
+- Cached for 5 minutes
+
+### Legacy Username/Password
+
+```python
+MCP_USERNAME = os.environ.get("RAG_MCP_USERNAME", "")
+MCP_PASSWORD = os.environ.get("RAG_MCP_PASSWORD", "")
+```
+
+## Configuration
+
+```python
+RAG_API_BASE = "https://rag.litxczv.shop"  # Remote API
+MCP_HOST = "127.0.0.1"
+MCP_PORT = 8766
+SEARCH_SCORE_THRESHOLD = 0.4
+ADD_KNOWLEDGE_MAX_WAIT = 120  # seconds
+```
+
+## Architecture
+
+```mermaid
+sequenceDiagram
+    Claude->>+MCP Server: Tool call (query)
+    MCP Server->>+RAG API: POST /query
+    RAG API->>+Qdrant: Vector search
+    Qdrant-->>-RAG API: Results
+    RAG API->>+LLM: Generate answer
+    LLM-->>-RAG API: Response
+    RAG API-->>-MCP Server: Answer
+    MCP Server-->>-Claude: Tool result
+```
+
+## Thread Safety
+
+- Uses threading locks for auth token caching
+- Supports concurrent tool calls in HTTP mode
+
+## Installation via uvx
+
 ```bash
-python mcp_server/server.py 2> mcp_server.log
+uvx --from git+https://github.com/fengshao1227/woerk_rag.git rag-mcp
 ```
 
-### 测试工具调用
-在 Claude Desktop 中输入：
-```
-帮我查询一下这个项目的主要功能是什么？
-```
+## Dependencies
 
-Claude 应该会自动调用 `query_knowledge` 工具。
-
-## 依赖关系
-
-### 上游依赖
-- `qa.chain.QAChatChain` - 问答链
-- `retriever.vector_store.VectorStore` - 向量存储
-- `utils.logger` - 日志记录
-- `mcp` (Python MCP SDK)
-
-### 下游消费者
-- Claude Desktop 客户端
-
-## 环境变量
-
-MCP Server 会继承主应用的环境变量：
-- `ANTHROPIC_API_KEY`
-- `QDRANT_HOST`, `QDRANT_PORT`
-- `EMBEDDING_MODEL`
-- `RERANKER_ENABLE`
-
-## 常见问题
-
-### 1. Claude Desktop 找不到工具？
-- 检查配置文件路径是否正确
-- 确保 Python 路径和脚本路径都是绝对路径
-- 重启 Claude Desktop
-
-### 2. MCP Server 启动失败？
-- 检查日志输出（stderr）
-- 确保 Qdrant 服务已启动
-- 验证环境变量配置
-
-### 3. 工具调用超时？
-增加 Claude Desktop 的超时配置（如果支持），或优化检索性能。
-
-## 后续改进
-
-- [ ] 添加更多工具（如添加知识、清空历史）
-- [ ] 支持流式响应（实时显示生成过程）
-- [ ] 实现工具调用统计和监控
-- [ ] 添加工具调用权限控制
-- [ ] 支持多用户隔离（基于 Claude Desktop 用户 ID）
+- mcp[cli] >= 1.0.0
+- httpx >= 0.25.0
