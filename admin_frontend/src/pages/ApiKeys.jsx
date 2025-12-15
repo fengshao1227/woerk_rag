@@ -92,9 +92,9 @@ export default function ApiKeys() {
     return `claude mcp add --transport http -s user rag-knowledge https://rag.litxczv.shop/mcp --header "X-API-Key: ${apiKey}"`;
   };
 
-  // 生成本地安装命令（uvx stdio 单窗口）
+  // 生成本地安装命令（Node.js stdio 单窗口）
   const getLocalInstallCommand = (apiKey) => {
-    return `claude mcp add rag-knowledge -s user --transport stdio -e RAG_API_KEY=${apiKey} -- uvx --from git+https://github.com/fengshao1227/woerk_rag.git rag-mcp`;
+    return `git clone https://github.com/fengshao1227/woerk_rag.git ~/rag-mcp && cd ~/rag-mcp/mcp_server_ts && npm install && claude mcp add rag-knowledge -s user -e RAG_API_KEY=${apiKey} -- node ~/rag-mcp/mcp_server_ts/dist/index.js`;
   };
 
   // 复制安装命令
