@@ -27,8 +27,9 @@ from starlette.routing import Mount
 
 from mcp.server.fastmcp import FastMCP
 
-from admin.models import MCPApiKey
+from admin.models import MCPApiKey, KnowledgeGroup, KnowledgeGroupItem, KnowledgeEntry, LLMModel
 from admin.database import SessionLocal
+from sqlalchemy import func
 from utils.logger import logger
 
 # 创建 MCP Server 实例（无状态模式，支持并发）
@@ -289,34 +290,33 @@ def list_groups() -> str:
         分组列表，包含名称、描述和条目数量
     """
     try:
-        with httpx.Client(timeout=30.0) as client:
-            response = client.get(
-                f"{RAG_API_INTERNAL}/admin/api/groups",
-                headers={"X-MCP-Internal": "true"}
-            )
-            response.raise_for_status()
-            data = response.json()
+        with SessionLocal() as db:
+            # 查询所有活跃的公开分组
+            groups = db.query(KnowledgeGroup).filter(
+                KnowledgeGroup.is_active == True,
+                KnowledgeGroup.is_public == True
+            ).order_by(KnowledgeGroup.id.desc()).all()
 
-        groups = data.get("groups", data) if isinstance(data, dict) else data
+            if not groups:
+                return "## 暂无分组\n\n知识库中尚未创建任何公开分组。"
 
-        if not groups:
-            return "## 暂无分组\n\n知识库中尚未创建任何分组。"
+            output = f"## 知识库分组（共 {len(groups)} 个）\n\n"
 
-        output = f"## 知识库分组（共 {len(groups)} 个）\n\n"
+            for g in groups:
+                # 统计分组内条目数量
+                items_count = db.query(func.count(KnowledgeGroupItem.id)).filter(
+                    KnowledgeGroupItem.group_id == g.id
+                ).scalar() or 0
 
-        for group in groups:
-            name = group.get("name", "未命名")
-            description = group.get("description", "")
-            count = group.get("item_count", group.get("count", 0))
+                output += f"### {g.name}\n"
+                if g.description:
+                    output += f"- **描述**: {g.description}\n"
+                output += f"- **条目数**: {items_count}\n\n"
 
-            output += f"### {name}\n"
-            if description:
-                output += f"- **描述**: {description}\n"
-            output += f"- **条目数**: {count}\n\n"
-
-        return output
+            return output
 
     except Exception as e:
+        logger.error(f"获取分组列表失败: {e}")
         return f"## 错误\n\n获取分组列表失败: {str(e)}"
 
 
@@ -329,32 +329,43 @@ def stats() -> str:
         知识库总条目数、分组统计、分类分布等信息
     """
     try:
-        with httpx.Client(timeout=30.0) as client:
-            response = client.get(
-                f"{RAG_API_INTERNAL}/admin/api/stats",
-                headers={"X-MCP-Internal": "true"}
-            )
-            response.raise_for_status()
-            data = response.json()
+        with SessionLocal() as db:
+            # 总条目数
+            total_knowledge = db.query(func.count(KnowledgeEntry.id)).scalar() or 0
+
+            # 公开分组数
+            total_groups = db.query(func.count(KnowledgeGroup.id)).filter(
+                KnowledgeGroup.is_active == True,
+                KnowledgeGroup.is_public == True
+            ).scalar() or 0
+
+            # 按分类统计
+            category_stats = db.query(
+                KnowledgeEntry.category,
+                func.count(KnowledgeEntry.id)
+            ).group_by(KnowledgeEntry.category).all()
+
+            # LLM 模型数
+            total_models = db.query(func.count(LLMModel.id)).filter(
+                LLMModel.is_active == True
+            ).scalar() or 0
 
         output = "## 知识库统计\n\n"
+        output += f"**总条目数**: {total_knowledge}\n\n"
+        output += f"**分组数**: {total_groups}\n\n"
 
-        total = data.get("total_knowledge", data.get("knowledge_count", 0))
-        output += f"**总条目数**: {total}\n\n"
-
-        group_count = data.get("total_groups", data.get("group_count", 0))
-        output += f"**分组数**: {group_count}\n\n"
-
-        categories = data.get("categories", data.get("category_stats", {}))
-        if categories:
+        if category_stats:
             output += "**分类分布**:\n"
-            for cat, count in categories.items():
-                output += f"- {cat}: {count}\n"
+            for cat, count in category_stats:
+                output += f"- {cat or 'unknown'}: {count}\n"
             output += "\n"
+
+        output += f"**LLM 模型数**: {total_models}\n"
 
         return output
 
     except Exception as e:
+        logger.error(f"获取统计信息失败: {e}")
         return f"## 错误\n\n获取统计信息失败: {str(e)}"
 
 

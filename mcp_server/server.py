@@ -531,7 +531,7 @@ def list_groups() -> str:
             response.raise_for_status()
             data = response.json()
 
-        groups = data.get("groups", data) if isinstance(data, dict) else data
+        groups = data.get("items", data.get("groups", data)) if isinstance(data, dict) else data
 
         if not groups:
             return "## 暂无分组\n\n知识库中尚未创建任何分组。"
@@ -541,7 +541,7 @@ def list_groups() -> str:
         for group in groups:
             name = group.get("name", "未命名")
             description = group.get("description", "")
-            count = group.get("item_count", group.get("count", 0))
+            count = group.get("items_count", group.get("item_count", group.get("count", 0)))
 
             output += f"### {name}\n"
             if description:
