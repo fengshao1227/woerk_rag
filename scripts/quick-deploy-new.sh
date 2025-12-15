@@ -64,13 +64,22 @@ echo "✓ 推送成功"
 
 # 3. 在服务器上拉取并重启
 echo -e "${YELLOW}[3/5] 更新服务器...${NC}"
-ssh ${REMOTE_USER}@${REMOTE_HOST} "bash -s" << 'ENDSSH'
+ssh ${REMOTE_USER}@${REMOTE_HOST} "bash -s" << ENDSSH
     set -e
 
     cd ~/rag
     echo "→ 拉取最新代码..."
     git fetch origin main
     git reset --hard origin/main
+
+    # 如果前端有更改，在服务器上构建
+    if [ "$FRONTEND_CHANGED" = "true" ]; then
+        echo "→ 构建前端..."
+        cd admin_frontend
+        npm run build --silent 2>/dev/null || npm run build
+        cd ..
+        echo "✓ 前端构建完成"
+    fi
 
     echo "→ 激活虚拟环境..."
     source venv/bin/activate
@@ -81,9 +90,9 @@ ssh ${REMOTE_USER}@${REMOTE_HOST} "bash -s" << 'ENDSSH'
     echo "✓ 服务器更新完成"
 ENDSSH
 
-# 4. 前端文件已通过 git pull 同步，无需额外上传
+# 4. 前端构建状态
 if [ "$FRONTEND_CHANGED" = true ]; then
-    echo -e "${GREEN}[4/5] 前端已通过 Git 同步${NC}"
+    echo -e "${GREEN}[4/5] 前端已在服务器上构建${NC}"
 else
     echo -e "${GREEN}[4/5] 前端无更改${NC}"
 fi
